@@ -80,7 +80,6 @@ async def handle_client(idx: int, host: str, port: int, delay: Tuple[float, floa
             frame = make_payload(user, msg)
             writer.write(frame)
             await writer.drain()
-            q.put(("msg", user, msg, True))
 
     async def receiver():
         while True:
