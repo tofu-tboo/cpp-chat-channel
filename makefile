@@ -1,5 +1,7 @@
 PACKAGES = -ljansson
 
+.PHONY: all client server libs clean
+
 all: client server libs
 
 client: src/client/client.cpp
@@ -10,3 +12,6 @@ server: src/server/server.cpp src/server/server_class.cpp src/server/channel_ser
 
 libs: src/libs/util.cpp src/libs/json.cpp
 	g++ -c $< -o $@ $(PACKAGES)
+
+clean:
+	rm -f client server libs *.o

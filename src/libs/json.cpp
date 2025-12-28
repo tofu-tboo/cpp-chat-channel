@@ -1,8 +1,8 @@
 #include "json.h"
 
-void free_json(json* ptr) {
-    if (ptr->ref && !IS_NULL(ptr->data)) {
-        json_decref(ptr->data); // no needed nullptr check
+void free_json(json ptr) {
+    if (ptr && !IS_NULL(ptr)) {
+        json_decref(ptr); // no needed nullptr check
     }
 }
 void free_jsons(int num, ...) {
@@ -11,7 +11,7 @@ void free_jsons(int num, ...) {
 
     int i;
     for (i = 0; i < num; i++) {
-        json* ptr = va_arg(ap, json*);
+        json ptr = va_arg(ap, json);
         free_json(ptr);
     }
     va_end(ap);
