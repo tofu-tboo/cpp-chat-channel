@@ -11,3 +11,5 @@ void frees(int num, ...) {
     }
     va_end(ap);
 }
+
+// hash helpers are defined inline in util.h

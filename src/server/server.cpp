@@ -6,7 +6,7 @@
 int main() {
     ChannelServer server;
 
-    server.lobby();
+    server.proc();
 
     return 0;
 }

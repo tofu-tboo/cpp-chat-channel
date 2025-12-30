@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <string>
 
 #define _EC_                                    "\033[0m"
 #define _CR_                		            "\033[0;31m"
@@ -32,5 +33,9 @@
 #define __FREES(...)                            frees(CNT_ARGS(__VA_ARGS__), __VA_ARGS__)
 
 void frees(int, ...);
+
+inline constexpr unsigned int hash(const char* str) {
+    return str && str[0] ? static_cast<unsigned int>(str[0]) + 0xEDB8832Full * hash(str + 1) : 8603;
+}
 
 #endif
