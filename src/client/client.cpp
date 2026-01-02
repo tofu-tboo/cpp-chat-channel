@@ -134,7 +134,7 @@ int main(int argc, char* argv[]) {
     std::queue<std::string> send_queue;
     std::mutex mtx;
     std::condition_variable cv;
-    std::string recv_buf;
+    std::string buf;
 
     auto producer = [&]() {
         pollfd in_fd{};
@@ -181,7 +181,7 @@ int main(int argc, char* argv[]) {
             break;
         }
         if (pfd.revents & POLLIN) {
-            if (!recv_frames(fd, recv_buf, user)) {
+            if (!recv_frames(fd, buf, user)) {
                 ERROR("recv failed");
                 break;
             }

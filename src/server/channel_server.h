@@ -4,8 +4,9 @@
 #include <unordered_map>
 
 #include "server_base.h"
-#include "lobby_server.h"
 #include "channel.h"
+#include "../libs/json.h"
+#include "../libs/socket.h"
 
 class ChannelServer: public ServerBase {
     private:
@@ -13,18 +14,9 @@ class ChannelServer: public ServerBase {
     public:
         ChannelServer();
         ~ChannelServer();
-        virtual void proc(const msec to = 0);
-
     protected:
-        virtual void handle_events(const pollev event);
-        virtual bool add_listener(const fd_t fd);
-        virtual bool delete_listener(const fd_t fd);
-        virtual bool recv_frame(const fd_t fd);
-        virtual bool send_frame(const fd_t fd, const std::string& payload);
-        virtual void broadcast(const std::string& payload);
-        virtual void resolve_timestamps();
-        virtual void resolve_payload(const std::string& payload);
-};
+        virtual void on_switch(const char* target, Json& root, const std::string& payload);
+    };
 
 
 #endif

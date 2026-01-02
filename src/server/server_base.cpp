@@ -12,108 +12,77 @@
 
 #include "server_base.h"
 #include "../libs/util.h"
-#include "../libs/json.h"
 
 fd_t ServerBase::fd = -1;
 
-ServerBase::ServerBase(int max_fd) {
-    branch_id = static_cast<int>(std::chrono::duration_cast<std::chrono::seconds>(
+ServerBase::ServerBase(const int max_fd): con_tracker(nullptr) {
+    try {
+        branch_id = static_cast<int>(std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count());
-    this->max_fd = max_fd;
-    efd = FD_ERR;
-        
-    if (fd == FD_ERR && !set_network()) {
-        iERROR("Failed to set network.");
-        if (fd != FD_ERR)
-            close(fd);
-    }
 
-    LOG(_CG_ "Server initialized on port 4800." _EC_);
+        if (fd == FD_ERR)
+            set_network();
 
-    // init epoll
-    if ((efd = epoll_create1(0)) == FD_ERR) {
-        iERROR("Failed to create epoll instance.");
-        return;
-    }
-    pollev ev{};
-    ev.events = EPOLLIN;
-    ev.data.fd = fd;
-    if (fd != FD_ERR && FAILED(epoll_ctl(efd, EPOLL_CTL_ADD, fd, &ev))) {
-        iERROR("Failed to add listen fd to epoll.");
+        LOG(_CG_ "Server initialized on port 4800." _EC_);
+
+        con_tracker = new ConnectionTracker(fd, max_fd);
+        if (!con_tracker)
+            throw std::runtime_error("Failed to allocate Connection Tracker.");
+        con_tracker->init();
+
+        task_runner.pushb([this]() {
+            resolve_timestamps();
+        });
+        task_runner.pushb([this]() {
+            resolve_broadcast();
+        });
+        task_runner.pushb([this]() {
+            resolve_deletion();
+        });
+    } catch (const std::exception& e) {
+        iERROR("%s", e.what());
     }
 }
 
 ServerBase::~ServerBase() {
-    if (efd != FD_ERR) { // cleanup epoll listeners
-        for (fd_t client_fd : listeners) {
-            epoll_ctl(efd, EPOLL_CTL_DEL, client_fd, nullptr);
-            if (client_fd != FD_ERR) {
-                close(client_fd);
-            }
-        }
-        close(efd);
-        efd = FD_ERR;
-    } else { // cleanup only listeners
-        for (fd_t client_fd : listeners) {
-            if (client_fd != FD_ERR) {
-                close(client_fd);
-            }
-        }
-    }
-    listeners.clear();
+    if (con_tracker)
+        delete con_tracker;
 
     if (fd != FD_ERR) { // close listening socket
         close(fd);
         fd = FD_ERR;
     }
 
-    recv_buf.clear();
+    rbuf.clear();
     mq.clear();
     next_deletion.clear();
 }
 
 void ServerBase::proc(const msec to) {
-    pollev events[max_fd];
+    try {
+        while (1) {
+            next_deletion.clear();
+            cur_msgs.clear();
 
-    while (1) {
-        next_deletion.clear();
-        cur_msgs.clear();
+            con_tracker->polling(to);
 
-        int n;
-        if (FAILED(n = epoll_wait(efd, events, max_fd, to))) {
-            iERROR("Failed to epoll_wait in proc.");
-            break;
+            task_runner.push_oncef([this]() {
+                auto events = con_tracker->get_ev();
+                for (int i = 0; i < con_tracker->get_evcnt(); i++)
+                    handle_events(events[i]);
+            });
+
+            task_runner.run();
         }
-
-        for (int i = 0; i < n; i++)
-            handle_events(events[i]);
-
-        resolve_timestamps();
-
-        // TOOD: smart pointer
-        json cur_window = json_array();
-        char* dumped;
-        for (const auto& [timestamp, msg] : cur_msgs)
-        {
-            json_array_append_new(cur_window, json_string(msg.c_str()));
-        }
-        dumped = json_dumps(cur_window, 0);
-        if (dumped) {
-            broadcast(dumped);
-            free(dumped);   
-        }
-        free_json(cur_window);
-
-        for (fd_t fd : next_deletion)
-            delete_listener(fd);
+    } catch(const std::exception& e) {
+        iERROR("%s", e.what());
     }
 }
 
 #pragma region PRIVATE_FUNC
-bool ServerBase::set_network() {
+void ServerBase::set_network() {
     if (fd != FD_ERR) {
-        iERROR("Sever descriptor is already assigned.");
-        return false;
+        throw std::runtime_error("Sever descriptor is already assigned.");
     }
 
     sAddrInfo hints, *res;
@@ -126,14 +95,12 @@ bool ServerBase::set_network() {
 
     status = getaddrinfo(NULL, "4800", &hints, &res);
     if (status != 0) {
-        iERROR("The getaddrinfo() is not resolved.");
-        return false;
+        throw std::runtime_error("The getaddrinfo() is not resolved.");
     }
 
     fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if (fd == FD_ERR) {
-        iERROR("Failed to get socket fd.");
-        return false;
+        throw std::runtime_error("Failed to get socket fd.");
     }
 
     int reuse = 1;
@@ -141,117 +108,55 @@ bool ServerBase::set_network() {
 
     status = bind(fd, res->ai_addr, res->ai_addrlen);
     if (status == -1) {
-        iERROR("Failed to bind server.");
-        return false;
+        throw std::runtime_error("Failed to bind server.");
     }
 
     status = listen(fd, 5);
     if (status == -1) {
-        iERROR("Failed to set listen().");
-        return false;
+        throw std::runtime_error("Failed to set listen().");
     }
 
     freeaddrinfo(res);
-
-    return true;
 }
-#pragma endregion
 
-#pragma region PROTECTED_FUNC
 void ServerBase::handle_events(const pollev event) {
     fd_t fd = event.data.fd;
     uint32_t evs = event.events;
 
     if (fd == ServerBase::fd) {
-        fd_t client = accept(fd, nullptr, nullptr);
-        if (client == FD_ERR) {
-            iERROR("Failed to accept new connection.");
-        } else {
-            LOG("Accepted new connection: fd %d", client);
-            if (!add_listener(client)) {
-                close(client);
-            }
-        }
+        on_accept();
     } else if (evs & (EPOLLHUP | EPOLLERR)) {
         next_deletion.push_back(fd);
     } else if (evs & EPOLLIN) {
-        if (!recv_frame(fd)) {
+        try {
+            recv_frame(fd);
+        } catch (const std::exception& e) {
+            iERROR("%s", e.what());
             next_deletion.push_back(fd);
         }
     }
     // 필요하면 EPOLLOUT도 처리
 }
+#pragma endregion
 
-bool ServerBase::add_listener(const int fd) {
-    if (fd == FD_ERR) {
-        iERROR("Invalid listener fd.");
-        return false;
-    } else if (efd == FD_ERR) {
-        iERROR("Epoll instance is not initialized.");
-        return false;
-    } else if (fd == ServerBase::fd) {
-        iERROR("Listening socket cannot be re-added as a client listener.");
-        return false;
-    } else if (listeners.find(fd) != listeners.end()) {
-        return true; // already tracked
-    }
-
-    pollev ev{};
-    ev.events = EPOLLIN;
-    ev.data.fd = fd;
-    if (FAILED(epoll_ctl(efd, EPOLL_CTL_ADD, fd, &ev))) {
-        iERROR("Failed to add fd %d to epoll.", fd);
-        return false;
-    }
-
-    listeners.insert(fd);
-    return true;
-}
-bool ServerBase::delete_listener(const int fd) {
-    if (fd == FD_ERR) {
-        iERROR("Invalid listener fd.");
-        return false;
-    } else if (efd == FD_ERR) {
-        iERROR("Epoll instance is not initialized.");
-        return false;
-    } else if (fd == ServerBase::fd) {
-        iERROR("Listening socket cannot be deleted.");
-        return false;
-    } else if (listeners.find(fd) == listeners.end()) {
-        return false; // not tracked
-    }
-
-    if (FAILED(epoll_ctl(efd, EPOLL_CTL_DEL, fd, nullptr))) {
-        iERROR("Failed to remove fd %d from epoll.", fd);
-    }
-
-    if (fd != FD_ERR) {
-        close(fd);
-    }
-
-    listeners.erase(fd);
-    recv_buf.erase(fd);
-    return true;
-}
-
-bool ServerBase::recv_frame(const int fd) {
+#pragma region PROTECTED_FUNC
+void ServerBase::recv_frame(const int fd) {
     // NEEDS: attach 4-byte length header to each frame
     //{"type":"message","channel_id":"c1","user_id":"u1","data":{"text":"message"},"timestamp":1234567890}
 
     char buf[4096];
     ssize_t n = recv(fd, buf, sizeof(buf), 0);
     if (n <= 0) {
-        return false; // closed or error
+        throw std::runtime_error("Minus frame.");
     }
 
-    std::string& acc = recv_buf[fd];
+    std::string& acc = rbuf[fd];
     acc.append(buf, n);
 
     while (acc.size() >= 4) {
         uint32_t len = ((uint8_t)acc[0] << 24) | ((uint8_t)acc[1] << 16) | ((uint8_t)acc[2] << 8) | (uint8_t)acc[3];
         if (len > MAX_FRAME_SIZE) {
-            iERROR("Frame too large from fd %d", fd);
-            return false;
+            throw runtime_errorf("Frame too large from fd %d", fd);
         } else if (len == 0) {
             iERROR("Empty frame from fd %d", fd);
             acc.erase(0, 4);
@@ -266,15 +171,11 @@ bool ServerBase::recv_frame(const int fd) {
         
         acc.erase(0, 4 + len);
     }
-
-    return true;
 }
 
-bool ServerBase::send_frame(const int fd, const std::string& payload) {
+void ServerBase::send_frame(const int fd, const std::string& payload) {
     uint32_t len = static_cast<uint32_t>(payload.size());
-    if (len == 0) {
-        return true;
-    }
+    if (len == 0) return;
 
     unsigned char header[4];
     header[0] = (len >> 24) & 0xFF;
@@ -284,23 +185,24 @@ bool ServerBase::send_frame(const int fd, const std::string& payload) {
 
     ssize_t sent = send(fd, header, 4, 0);
     if (sent != 4) {
-        return false;
+        throw std::runtime_error("Invalid header sent.");
     }
 
     size_t total = 0;
     while (total < payload.size()) {
         ssize_t n = send(fd, payload.data() + total, payload.size() - total, 0);
         if (n <= 0) {
-            return false;
+            throw std::runtime_error("Minus frame.");
         }
         total += static_cast<size_t>(n);
     }
-    return true;
 }
 
 void ServerBase::broadcast(const std::string& payload) {
-    for (const fd_t& fd : listeners) {
-        if (!send_frame(fd, payload)) {
+    for (const fd_t& fd : con_tracker->get_clients()) {
+        try {
+            send_frame(fd, payload);
+        } catch(const std::exception&) {
             next_deletion.push_back(fd);
         }
     }
@@ -309,8 +211,8 @@ void ServerBase::broadcast(const std::string& payload) {
 void ServerBase::resolve_timestamps() {
     for (const std::string& msg : mq) {
         json_error_t err;
-        json root;
-        if ((root = json_loads(msg.c_str(), 0, &err)) == nullptr) {
+        Json root(json_loads(msg.c_str(), 0, &err));
+        if (root.get() == nullptr) {
             iERROR("Failed to parse JSON: %s", err.text);
             continue;
         }
@@ -321,33 +223,71 @@ void ServerBase::resolve_timestamps() {
         } __UNPACK_FAIL {
             iERROR("Malformed JSON message, missing timestamp.");
         }
-        __FREE_JSON(root);
     }
     mq.clear();
 }
 
 void ServerBase::resolve_payload(const std::string& payload) {
     json_error_t err;
-    json root;
-    if ((root = json_loads(payload.c_str(), 0, &err)) == nullptr) {
+    Json root(json_loads(payload.c_str(), 0, &err));
+    if (root.get() == nullptr) {
         iERROR("Failed to parse JSON: %s", err.text);
         return;
     }
     
     const char* type;
     __UNPACK_JSON(root, "{s:s}", "type", &type) {
-        switch (hash(type))
-        {
-        case hash("message"):
-            mq.push_back(payload);
-            break;
-        
-        default:
-            break;
-        }
+        on_switch(type, root, payload);
     } __UNPACK_FAIL {
         iERROR("Malformed JSON message, missing type.");
     }
-    __FREE_JSON(root);
 }
+
+void ServerBase::resolve_broadcast() {
+    Json cur_window(json_array());
+    for (const auto& [timestamp, msg] : cur_msgs) {
+        json_array_append_new(cur_window.get(), json_string(msg.c_str()));
+    }
+    CharDump dumped(json_dumps(cur_window.get(), 0));
+    if (dumped) {
+        broadcast(dumped.get());
+    }
+}
+
+void ServerBase::resolve_deletion() {
+    for (const fd_t fd : next_deletion) {
+        con_tracker->delete_client(fd);
+        close(fd);
+        rbuf.erase(fd);
+    }
+}
+
+void ServerBase::on_switch(const char* target, Json& root, const std::string& payload) {
+    switch (hash(target))
+    {
+    case hash("message"):
+        mq.push_back(payload);
+        break;
+    
+    default:
+        break;
+    }
+}
+
+void ServerBase::on_accept() {
+    fd_t client = accept(ServerBase::fd, nullptr, nullptr);
+    if (client == FD_ERR) {
+        iERROR("Failed to accept new connection.");
+    } else {
+        LOG("Accepted new connection: fd %d", client);
+        try {
+            con_tracker->add_client(client);
+        } catch (const std::exception& e) {
+            iERROR("%s", e.what());
+            con_tracker->delete_client(client);
+            close(client);
+        }
+    }
+}
+
 #pragma endregion

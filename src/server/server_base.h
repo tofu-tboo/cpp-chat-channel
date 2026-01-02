@@ -1,9 +1,8 @@
 #ifndef __SERVER_BASE_H__
 #define __SERVER_BASE_H__
 
-#define FD_ERR              -1
 #define MAX_FRAME_SIZE      16 * 1024
-#define FAILED(mth)         ((mth) == -1)
+
 #define iERROR(...)         LOG(_CR_ "[%x] " _EC_, branch_id); ERROR(__VA_ARGS__)
 
 #include <unordered_map>
@@ -11,13 +10,16 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <deque>
+#include <functional>
 #include <cstdint>
+#include <stdexcept>
 
-typedef struct addrinfo sAddrInfo;
-typedef struct epoll_event pollev;
-typedef int fd_t; 
-typedef int msec;
-typedef uint64_t msec64;
+#include "../libs/json.h"
+#include "../libs/socket.h"
+#include "../libs/connection_tracker.h"
+#include "../libs/task_runner.h"
+
 /*
 All servers have only one shared file descriptor listening on a port.
 ServerBase assumed that it has one channel.
@@ -26,34 +28,40 @@ ServerBase assumed that it has one channel.
 class ServerBase {
     protected:
         static fd_t fd;
-    private:
-        fd_t efd;
+    protected:
         int branch_id; // manager branch's id
-        int max_fd;
-        std::unordered_set<fd_t> listeners;
+        ConnectionTracker* con_tracker;
 
-        std::unordered_map<fd_t, std::string> recv_buf; // per-connection accumulation buffer
+        std::unordered_map<fd_t, std::string> rbuf; // per-connection accumulation buffer
         std::vector<std::string> mq; // parsed json frames
         std::multimap<msec64, std::string> cur_msgs; // sorted by timestamp
         std::vector<fd_t> next_deletion;
 
+        TaskRunner<void()> task_runner;
     public:
-        ServerBase(int max_fd = 256);
+        ServerBase(const int max_fd = 256);
         ~ServerBase();
 
-        virtual void proc(const msec to = 0);
+        void proc(const msec to = 0);
 
     private:
-        bool set_network();
+        void set_network();
+        void handle_events(const pollev event);
     protected:
-        virtual void handle_events(const pollev event);
-        virtual bool add_listener(const fd_t fd);
-        virtual bool delete_listener(const fd_t fd);
-        virtual bool recv_frame(const fd_t fd);
-        virtual bool send_frame(const fd_t fd, const std::string& payload);
+        // Helpers
+        virtual void recv_frame(const fd_t fd); // frame format can be overridden
+        virtual void send_frame(const fd_t fd, const std::string& payload); // frame format can be overridden
         virtual void broadcast(const std::string& payload);
+
+        // Tasks
         virtual void resolve_timestamps();
         virtual void resolve_payload(const std::string& payload);
+        virtual void resolve_broadcast();
+        virtual void resolve_deletion();
+
+        // Hooks
+        virtual void on_switch(const char* target, Json& root, const std::string& payload);
+        virtual void on_accept();
 };
 
 #endif

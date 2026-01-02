@@ -4,11 +4,14 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string>
+#include <vector>
+#include <stdexcept>
 
 #define _EC_                                    "\033[0m"
 #define _CR_                		            "\033[0;31m"
 #define _CG_                   		            "\033[0;32m"
 #define _CB_                		            "\033[0;34m"
+#define _CY_                		            "\033[0;33m"
 
 #ifdef DEBUG
 #define DLOG(format, ...)                       printf(format "\n", ##__VA_ARGS__)
@@ -36,6 +39,22 @@ void frees(int, ...);
 
 inline constexpr unsigned int hash(const char* str) {
     return str && str[0] ? static_cast<unsigned int>(str[0]) + 0xEDB8832Full * hash(str + 1) : 8603;
+}
+
+template <typename... Args>
+std::runtime_error runtime_errorf(const char* fmt, Args&&... args) {
+    char buf[256];
+    int n = snprintf(buf, sizeof(buf), fmt, std::forward<Args>(args)...);
+    if (n < 0) {
+        return std::runtime_error("format error");
+    }
+    if (n < static_cast<int>(sizeof(buf))) {
+        return std::runtime_error(buf);
+    }
+    // 버퍼가 모자라면 정확한 크기만큼 할당 후 다시 포맷
+    std::vector<char> big(n + 1);
+    snprintf(big.data(), big.size(), fmt, std::forward<Args>(args)...);
+    return std::runtime_error(big.data());
 }
 
 #endif
