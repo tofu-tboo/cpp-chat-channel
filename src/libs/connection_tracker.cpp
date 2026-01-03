@@ -1,13 +1,7 @@
 
 #include "connection_tracker.h"
 
-ConnectionTracker::ConnectionTracker(fd_t& fd, const int max_fd): efd(FD_ERR), listener_fd(fd), max_fd(max_fd), events(nullptr) {
-    try {
-        events = new pollev[max_fd];
-    } catch(const std::bad_alloc) {
-        throw std::runtime_error("Failed to allocate poll events.");
-    }
-}
+ConnectionTracker::ConnectionTracker(fd_t& fd, const int max_fd): efd(FD_ERR), listener_fd(fd), max_fd(max_fd) {}
 
 ConnectionTracker::~ConnectionTracker() {
     if (efd != FD_ERR) { // cleanup epoll clients
@@ -27,9 +21,6 @@ ConnectionTracker::~ConnectionTracker() {
         }
     }
     clients.clear();
-
-    if (events)
-        delete[] events;
 }
 
 void ConnectionTracker::init() {
@@ -46,18 +37,21 @@ void ConnectionTracker::init() {
 }
 
 void ConnectionTracker::polling(const msec to) {
-    if (FAILED(evcnt = epoll_wait(efd, events, max_fd, to))) {
+    if (FAILED(evcnt = epoll_wait(efd, events, MAX_PEV, to))) {
         throw std::runtime_error("Failed during polling.");
     }
 }
 
 void ConnectionTracker::add_client(const int fd) {
+    std::lock_guard<std::mutex> lock(mtx);
     if (fd == FD_ERR) {
         throw std::runtime_error("Invalid client fd.");
     } else if (efd == FD_ERR) {
         throw std::runtime_error("Epoll instance is not initialized.");
     } else if (fd == listener_fd) {
         throw std::runtime_error("Listening socket cannot be re-added as a client.");
+    } else if (clients.size() >= max_fd) {
+        throw std::runtime_error("Pool full.");
     }
 
     pollev ev{};
@@ -70,6 +64,7 @@ void ConnectionTracker::add_client(const int fd) {
     clients.insert(fd);
 }
 void ConnectionTracker::delete_client(const int fd) {
+    std::lock_guard<std::mutex> lock(mtx);
     if (fd == FD_ERR) {
         throw std::runtime_error("Invalid client fd.");
     } else if (efd == FD_ERR) {

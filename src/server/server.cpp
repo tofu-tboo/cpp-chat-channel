@@ -4,7 +4,7 @@
 #include "channel_server.h"
 
 int main() {
-    ChannelServer server;
+    ChannelServer server(32);
 
     server.proc();
 

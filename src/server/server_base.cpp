@@ -15,7 +15,7 @@
 
 fd_t ServerBase::fd = -1;
 
-ServerBase::ServerBase(const int max_fd): con_tracker(nullptr) {
+ServerBase::ServerBase(const int max_fd, const msec to): con_tracker(nullptr), timeout(to) {
     try {
         branch_id = static_cast<int>(std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count());
@@ -30,13 +30,22 @@ ServerBase::ServerBase(const int max_fd): con_tracker(nullptr) {
             throw std::runtime_error("Failed to allocate Connection Tracker.");
         con_tracker->init();
 
-        task_runner.pushb([this]() {
+        task_runner.new_session(2);
+        task_runner.pushb(0, [this]() {
+            next_deletion.clear();
+            cur_msgs.clear();
+        });
+        task_runner.pushb(0, [this]() {
+            con_tracker->polling(timeout);
+        });
+
+        task_runner.pushb(1, [this]() {
             resolve_timestamps();
         });
-        task_runner.pushb([this]() {
+        task_runner.pushb(1, [this]() {
             resolve_broadcast();
         });
-        task_runner.pushb([this]() {
+        task_runner.pushb(1, [this]() {
             resolve_deletion();
         });
     } catch (const std::exception& e) {
@@ -58,21 +67,10 @@ ServerBase::~ServerBase() {
     next_deletion.clear();
 }
 
-void ServerBase::proc(const msec to) {
+void ServerBase::proc() {
     try {
         while (1) {
-            next_deletion.clear();
-            cur_msgs.clear();
-
-            con_tracker->polling(to);
-
-            task_runner.push_oncef([this]() {
-                auto events = con_tracker->get_ev();
-                for (int i = 0; i < con_tracker->get_evcnt(); i++)
-                    handle_events(events[i]);
-            });
-
-            task_runner.run();
+            frame();
         }
     } catch(const std::exception& e) {
         iERROR("%s", e.what());
@@ -167,7 +165,7 @@ void ServerBase::recv_frame(const int fd) {
         
         std::string payload = acc.substr(4, len);
 
-        resolve_payload(payload);
+        resolve_payload(fd, payload);
         
         acc.erase(0, 4 + len);
     }
@@ -208,6 +206,15 @@ void ServerBase::broadcast(const std::string& payload) {
     }
 }
 
+void ServerBase::frame() {
+    task_runner.push_oncef(1, [this]() {
+        auto events = con_tracker->get_ev();
+        for (int i = 0; i < con_tracker->get_evcnt(); i++)
+            handle_events(events[i]);
+    });
+    task_runner.run();
+}
+
 void ServerBase::resolve_timestamps() {
     for (const std::string& msg : mq) {
         json_error_t err;
@@ -227,7 +234,7 @@ void ServerBase::resolve_timestamps() {
     mq.clear();
 }
 
-void ServerBase::resolve_payload(const std::string& payload) {
+void ServerBase::resolve_payload(const fd_t from, const std::string& payload) {
     json_error_t err;
     Json root(json_loads(payload.c_str(), 0, &err));
     if (root.get() == nullptr) {
@@ -237,7 +244,7 @@ void ServerBase::resolve_payload(const std::string& payload) {
     
     const char* type;
     __UNPACK_JSON(root, "{s:s}", "type", &type) {
-        on_switch(type, root, payload);
+        on_switch(from, type, root, payload);
     } __UNPACK_FAIL {
         iERROR("Malformed JSON message, missing type.");
     }
@@ -262,7 +269,7 @@ void ServerBase::resolve_deletion() {
     }
 }
 
-void ServerBase::on_switch(const char* target, Json& root, const std::string& payload) {
+void ServerBase::on_switch(const fd_t from, const char* target, Json& root, const std::string& payload) {
     switch (hash(target))
     {
     case hash("message"):

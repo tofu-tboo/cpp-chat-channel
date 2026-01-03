@@ -1,9 +1,12 @@
 #ifndef __CONNECTION_TRACKER_H__
 #define __CONNECTION_TRACKER_H__
 
+#define MAX_PEV         1024
+
 #include <unordered_set>
 #include <unistd.h>
 #include <sys/epoll.h>
+#include <mutex>
 
 #include "util.h"
 #include "socket.h"
@@ -14,8 +17,9 @@ class ConnectionTracker {
         fd_t& listener_fd;
         fd_t efd;
         std::unordered_set<fd_t> clients;
-        pollev* events;
+        pollev events[MAX_PEV];
         int evcnt;
+        mutable std::mutex mtx;
 
     public:
         ConnectionTracker(fd_t& fd, const int max_fd = 256);

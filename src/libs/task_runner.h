@@ -3,6 +3,10 @@
 
 #include <functional>
 #include <deque>
+#include <vector>
+#include <stdexcept>
+#include <iterator>
+#include <mutex>
 
 template <typename Fn>
 class TaskRunner {
@@ -11,23 +15,27 @@ class TaskRunner {
             bool once;
             std::function<Fn> func;
         };
-        std::deque<Task> tasks;
+        std::vector<std::deque<Task>> tasks;
+        mutable std::mutex mtx;
     public:
-        ~TaskRunner();
+        ~TaskRunner() = default;
         
-        void push_oncef(const std::function<Fn>& func);
-        void push_onceb(const std::function<Fn>& func);
+        void push_oncef(const unsigned int which, const std::function<Fn>& func);
+        void push_onceb(const unsigned int which, const std::function<Fn>& func);
 
-        void pushf(const std::function<Fn>& func);
-        void pushb(const std::function<Fn>& func);
+        void pushf(const unsigned int which, const std::function<Fn>& func);
+        void pushb(const unsigned int which, const std::function<Fn>& func);
 
-        void popf();
-        void popb();
+        void popf(const unsigned int which);
+        void popb(const unsigned int which);
+
+        void new_session(const unsigned int cnt);
         
         void run();
     private:
-        void _pushb(bool flag, const std::function<Fn>& func);
-        void _pushf(bool flag, const std::function<Fn>& func);
+        std::deque<Task>& session_at(unsigned int idx);
+        void _pushb(std::deque<Task>& session, bool flag, const std::function<Fn>& func);
+        void _pushf(std::deque<Task>& session, bool flag, const std::function<Fn>& func);
 };
 
 #include "task_runner.tpp"

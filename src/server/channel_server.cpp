@@ -7,18 +7,18 @@
 #include "channel_server.h"
 #include "../libs/util.h"
 
-ChannelServer::ChannelServer() {
-    task_runner.popf();
-    task_runner.popf();
-}
+ChannelServer::ChannelServer(const int max_fd, const msec to): ServerBase(max_fd, to) {}
 ChannelServer::~ChannelServer() {
     for (auto& [_, channel] : channels) {
         delete channel;
     }
+
+    channels.clear();
+    user_map.clear();
 }
 
 #pragma region PROTECTED_FUNC
-void ChannelServer::on_switch(const char* target, Json& root, const std::string& payload) {
+void ChannelServer::on_switch(const fd_t from, const char* target, Json& root, const std::string& payload) {
     switch (hash(target))
     {
     // case hash("message"):
@@ -35,6 +35,12 @@ void ChannelServer::on_switch(const char* target, Json& root, const std::string&
                     channels[channel_id] = new Channel();
                     LOG(_CG_ "Channel %u created." _EC_, channel_id);
                 }
+
+                if (user_map.find(fd) != user_map.end()) {
+                    channels[channel_id]->leave(fd);
+                }
+                con_tracker->delete_client(fd);
+                channels[channel_id]->join(fd);
             } __UNPACK_FAIL {
                 iERROR("Malformed JSON message, missing channel_id.");
             }

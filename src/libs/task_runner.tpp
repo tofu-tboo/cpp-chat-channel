@@ -1,58 +1,77 @@
-
 #include "task_runner.h"
 
-
 template <typename Fn>
-TaskRunner<Fn>::~TaskRunner() {
-        tasks.clear();
+void TaskRunner<Fn>::push_oncef(const unsigned int which, const std::function<Fn>& func) {
+    std::lock_guard<std::mutex> lock(mtx);
+    auto& session = session_at(which);
+    _pushf(session, true, func);
+}
+template <typename Fn>
+void TaskRunner<Fn>::push_onceb(const unsigned int which, const std::function<Fn>& func) {
+    std::lock_guard<std::mutex> lock(mtx);
+    auto& session = session_at(which);
+    _pushb(session, true, func);
 }
 
 template <typename Fn>
-void TaskRunner<Fn>::push_oncef(const std::function<Fn>& func) {
-        _pushf(true, func);
+void TaskRunner<Fn>::pushf(const unsigned int which, const std::function<Fn>& func) {
+    std::lock_guard<std::mutex> lock(mtx);
+    auto& session = session_at(which);
+    _pushf(session, false, func);
 }
 template <typename Fn>
-void TaskRunner<Fn>::push_onceb(const std::function<Fn>& func) {
-        _pushb(true, func);
-}
-
-template <typename Fn>
-void TaskRunner<Fn>::pushf(const std::function<Fn>& func) {
-        _pushf(false, func);
-}
-template <typename Fn>
-void TaskRunner<Fn>::pushb(const std::function<Fn>& func) {
-        _pushb(false, func);
+void TaskRunner<Fn>::pushb(const unsigned int which, const std::function<Fn>& func) {
+    std::lock_guard<std::mutex> lock(mtx);
+    auto& session = session_at(which);
+    _pushb(session, false, func);
 }
 
 template <typename Fn>
-void TaskRunner<Fn>::popf() {
-        tasks.pop_front();
+void TaskRunner<Fn>::popf(const unsigned int which) {
+    std::lock_guard<std::mutex> lock(mtx);
+    auto& session = session_at(which);
+    session.pop_front();
 }
 template <typename Fn>
-void TaskRunner<Fn>::popb() {
-        tasks.pop_back();
+void TaskRunner<Fn>::popb(const unsigned int which) {
+    std::lock_guard<std::mutex> lock(mtx);
+    auto& session = session_at(which);
+    session.pop_back();
+}
+
+template <typename Fn>
+void TaskRunner<Fn>::new_session(const unsigned int cnt) {
+    std::lock_guard<std::mutex> lock(mtx);
+    for (unsigned int i = 0; i < cnt; i++) {
+        tasks.emplace_back();
+    }
 }
 
 template <typename Fn>
 void TaskRunner<Fn>::run() {
-        for (auto it = tasks.begin(); it != tasks.end();) {
-                it->func();
-                if (it->once) {
-                        it = tasks.erase(it);
-                } else {
-                        it++;
-                }
+    std::lock_guard<std::mutex> lock(mtx);
+    for (auto& session : tasks) {
+        for (auto it = session.begin(); it != session.end();) {
+            it->func();
+            it = it->once ? session.erase(it) : std::next(it);
         }
+    }
 }
 
 #pragma region PRIVATE_FUNC
 template <typename Fn>
-void TaskRunner<Fn>::_pushb(bool flag, const std::function<Fn>& func) {
-        tasks.push_back({flag, func});
+std::deque<typename TaskRunner<Fn>::Task>& TaskRunner<Fn>::session_at(unsigned int idx) {
+    if (idx >= tasks.size()) {
+        throw std::runtime_error("Task session out of range.");
+    }
+    return tasks[idx];
 }
 template <typename Fn>
-void TaskRunner<Fn>::_pushf(bool flag, const std::function<Fn>& func) {
-        tasks.push_front({flag, func});
+void TaskRunner<Fn>::_pushb(std::deque<Task>& session, bool flag, const std::function<Fn>& func) {
+    session.push_back({flag, func});
+}
+template <typename Fn>
+void TaskRunner<Fn>::_pushf(std::deque<Task>& session, bool flag, const std::function<Fn>& func) {
+    session.push_front({flag, func});
 }
 #pragma endregion

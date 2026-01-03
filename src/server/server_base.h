@@ -32,6 +32,8 @@ class ServerBase {
         int branch_id; // manager branch's id
         ConnectionTracker* con_tracker;
 
+        msec timeout;
+
         std::unordered_map<fd_t, std::string> rbuf; // per-connection accumulation buffer
         std::vector<std::string> mq; // parsed json frames
         std::multimap<msec64, std::string> cur_msgs; // sorted by timestamp
@@ -39,10 +41,10 @@ class ServerBase {
 
         TaskRunner<void()> task_runner;
     public:
-        ServerBase(const int max_fd = 256);
+        ServerBase(const int max_fd = 256, const msec to = 0);
         ~ServerBase();
 
-        void proc(const msec to = 0);
+        virtual void proc();
 
     private:
         void set_network();
@@ -54,13 +56,14 @@ class ServerBase {
         virtual void broadcast(const std::string& payload);
 
         // Tasks
+        virtual void frame();
         virtual void resolve_timestamps();
-        virtual void resolve_payload(const std::string& payload);
+        virtual void resolve_payload(const fd_t from, const std::string& payload);
         virtual void resolve_broadcast();
         virtual void resolve_deletion();
 
         // Hooks
-        virtual void on_switch(const char* target, Json& root, const std::string& payload);
+        virtual void on_switch(const fd_t from, const char* target, Json& root, const std::string& payload);
         virtual void on_accept();
 };
 
