@@ -15,13 +15,16 @@ typedef unsigned int ch_id_t;
 #include "server_base.h"
 #include "../libs/util.h"
 
+class ChannelServer; // Forward declaration
+
 class Channel: ServerBase {
     private:
         ch_id_t channel_id;
         std::thread worker;
         std::atomic<bool> stop_flag{false};
+        ChannelServer* server; // upward link
     public:
-        Channel();
+        Channel(ChannelServer* srv);
         ~Channel();
 
         virtual void proc() override;

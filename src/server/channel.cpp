@@ -1,6 +1,7 @@
 #include "channel.h"
+#include "channel_server.h"
 
-Channel::Channel(): ServerBase(256, 100) {
+Channel::Channel(ChannelServer* srv): ServerBase(256, 100), server(srv) {
     stop_flag.store(false);
     worker = std::thread(&Channel::proc, this);
 }
@@ -40,7 +41,27 @@ void Channel::join(const fd_t fd) {
 void Channel::on_accept() {}
 void Channel::on_switch(const fd_t from, const char* target, Json& root, const std::string& payload) {
     // temporal
-    ServerBase::on_switch(from, target, root, payload);
-    // TODO: post join msg to main server
+    switch (hash(target)) {
+    case hash("message"):
+		ServerBase::on_switch(from, target, root, payload);
+        break;
+    case hash("leave"):
+        leave(from);
+        server->report({ChannelServer::ChannelReq::Type::SWITCH, from, 0, true}); // Request move to lobby
+        break;
+    case hash("join"):
+        {
+            ch_id_t channel_id;
+            __UNPACK_JSON(root, "{s:I}", "channel_id", &channel_id) {
+                leave(from);
+                server->report({ChannelServer::ChannelReq::Type::SWITCH, from, channel_id, false}); // Request switch channel
+            } __UNPACK_FAIL {
+                iERROR("Malformed JSON message, missing channel_id.");
+            }
+        }
+        break;
+    default:
+        break;
+    }
 }
 #pragma endregion
