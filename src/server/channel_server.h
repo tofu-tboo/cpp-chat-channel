@@ -21,7 +21,6 @@ class ChannelServer: public ServerBase {
         };
     private:
         std::unordered_map<ch_id_t, Channel*> channels;
-        std::unordered_map<fd_t, ch_id_t> user_map;
         std::queue<ChannelReq> req_queue;
         std::mutex req_mtx;
     public:
@@ -30,6 +29,7 @@ class ChannelServer: public ServerBase {
         void report(const ChannelReq& req);
     protected:
         virtual void on_switch(const fd_t from, const char* target, Json& root, const std::string& payload) override;
+		void consume_report();
     };
 
 

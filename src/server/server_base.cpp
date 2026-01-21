@@ -14,6 +14,7 @@
 #include "../libs/util.h"
 
 fd_t ServerBase::fd = -1;
+std::unordered_map<fd_t, std::string> ServerBase::name_map;
 
 ServerBase::ServerBase(const int max_fd, const msec to): con_tracker(nullptr), timeout(to) {
     try {
@@ -140,13 +141,14 @@ void ServerBase::handle_events(const pollev event) {
 #pragma region PROTECTED_FUNC
 void ServerBase::recv_frame(const int fd) {
     // NEEDS: attach 4-byte length header to each frame
-    //{"type":"message","channel_id":"c1","user_id":"u1","data":{"text":"message"},"timestamp":1234567890}
 
     char buf[4096];
     ssize_t n = recv(fd, buf, sizeof(buf), 0);
-    if (n <= 0) {
+    if (n < 0) {
         throw std::runtime_error("Minus frame.");
-    }
+    } else if (n == 0) {
+		return; // disconnected
+	}
 
     std::string& acc = rbuf[fd];
     acc.append(buf, n);
@@ -225,8 +227,9 @@ void ServerBase::resolve_timestamps() {
         }
         
         msec64 timestamp;
-        __UNPACK_JSON(root, "{s:I}", "timestamp", &timestamp) {
-            cur_msgs.emplace(timestamp, msg);
+		const char* buf;
+        __UNPACK_JSON(root, "{s:I,s:s}", "timestamp", &timestamp, "text", &buf) {
+            cur_msgs.emplace(timestamp, std::string(buf));
         } __UNPACK_FAIL {
             iERROR("Malformed JSON message, missing timestamp.");
         }
@@ -253,7 +256,14 @@ void ServerBase::resolve_payload(const fd_t from, const std::string& payload) {
 void ServerBase::resolve_broadcast() {
     Json cur_window(json_array());
     for (const auto& [timestamp, msg] : cur_msgs) {
-        json_array_append_new(cur_window.get(), json_string(msg.c_str()));
+		__ALLOC_JSON_NEW(payload, "{s:s,s:s,s:s,s:I}",
+			"type", "user", "user_id", name_map.begin()->second.c_str(), "event", msg.c_str(), "timestamp", timestamp) {
+
+		} __ALLOC_FAIL {
+			iERROR("Failed to create broadcast JSON.");
+			continue;
+		}
+        json_array_append_new(cur_window.get(), payload.release());
     }
     CharDump dumped(json_dumps(cur_window.get(), 0));
     if (dumped) {
@@ -264,6 +274,7 @@ void ServerBase::resolve_broadcast() {
 void ServerBase::resolve_deletion() {
     for (const fd_t fd : next_deletion) {
         con_tracker->delete_client(fd);
+		name_map.erase(fd);
         close(fd);
         rbuf.erase(fd);
     }
@@ -289,7 +300,8 @@ void ServerBase::on_accept() {
         LOG("Accepted new connection: fd %d", client);
         try {
             con_tracker->add_client(client);
-        } catch (const std::exception& e) {
+			name_map[client] = "user_" + std::to_string(client); // temporary username assignment
+		} catch (const std::exception& e) {
             iERROR("%s", e.what());
             con_tracker->delete_client(client);
             close(client);

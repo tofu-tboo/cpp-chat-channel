@@ -28,6 +28,7 @@ ServerBase assumed that it has one channel.
 class ServerBase {
     protected:
         static fd_t fd;
+		static std::unordered_map<fd_t, std::string> name_map; // username mapping
     protected:
         int branch_id; // manager branch's id
         ConnectionTracker* con_tracker;
@@ -63,7 +64,7 @@ class ServerBase {
         virtual void resolve_deletion();
 
         // Hooks
-        virtual void on_switch(const fd_t from, const char* target, Json& root, const std::string& payload);
+        virtual void on_switch(const fd_t from, const char* target, Json& root, const std::string& payload); // handle both pure json & payload
         virtual void on_accept();
 };
 
