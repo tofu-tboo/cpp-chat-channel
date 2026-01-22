@@ -1,6 +1,9 @@
 # cpp-chat-channel
 
-서버에서 유저 접속 대기열 push > 유저가 send로 채널 입력 > 서버가 각 채널 존재 여부 파악해서 스레드 생성
+서버에서 유저 접속 대기열 push > 유저가 send로 채널 입력 > 서버가 각 채널 존재 여부 파악해서 channel 스레드 생성(생성자에서 thread worker로 작동)
+
+메인 스레드 - ChannelServer
+서브 스레드 - Channel
 
 ## Request/Response 명세
 
@@ -12,15 +15,29 @@
 //REQ:
 {
 	type: "join", // Join, JOIN
-	user_id: string,
-	channel_id: int
+	user_id?: string,
+	channel_id: int,
+	timestamp: int
 }
 
 //RES:
 {
 	type: "system",
 	event: "join" | "rejoin",
-	user_id: string
+	user_id: string,
+	timestamp: int
+}
+```
+
+- 채널 퇴장
+
+```
+//RES:
+{
+	type: "system",
+	event: "leave",
+	user_id: string,
+	timestamp: int
 }
 ```
 
@@ -30,7 +47,8 @@
 //REQ:
 {
 	type: "message", // Message, MESSAGE
-	text: string
+	text: string,
+	timestamp: int
 }
 
 //RES:

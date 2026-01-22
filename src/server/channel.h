@@ -12,12 +12,12 @@ typedef unsigned int ch_id_t;
 #include <thread>
 #include <atomic>
 
-#include "server_base.h"
+#include "chat_server.h"
 #include "../libs/util.h"
 
 class ChannelServer; // Forward declaration
 
-class Channel: ServerBase {
+class Channel: public ChatServer {
     private:
         ch_id_t channel_id;
         std::thread worker;
@@ -29,13 +29,17 @@ class Channel: ServerBase {
 
         virtual void proc() override;
 
+		// Can be polluted by other threads but protecting by ConnectionTracker's mutex
         void leave(const fd_t fd);
         void join(const fd_t fd);
+		void join_and_logging(const fd_t fd, JoinReqDto req, bool re = true);
 
-    protected:
+    protected: // Sequencially called in proc() => no needed mutex
+		virtual void resolve_timestamps() override;
+        virtual void resolve_broadcast() override;
+
         virtual void on_accept() override;
-        virtual void on_switch(const fd_t from, const char* target, Json& root, const std::string& payload) override;
-    private:
+        virtual void on_req(const fd_t from, const char* target, Json& root) override;
 };
 
 #endif

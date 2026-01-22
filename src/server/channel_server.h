@@ -5,32 +5,40 @@
 #include <queue>
 #include <mutex>
 
-#include "server_base.h"
+#include "chat_server.h"
 #include "channel.h"
 #include "../libs/json.h"
 #include "../libs/socket.h"
+#include "../libs/dto.h"
+
+
+/* Requirement of ChannelServer
+- Manage Channels: Create and manage multiple Channel instances.
+- Handle Channel Reports: Process requests from channels.
+
+*/
 
 class ChannelServer: public ServerBase {
     public:
-        struct ChannelReq {
-			enum Type { SWITCH } type;
-            fd_t fd;
-            ch_id_t target;
-            bool is_leave; // true: go to lobby, false: go to target channel
-			std::string payload;
+        struct ChannelReport {
+			const char* type;
+            fd_t from;
+			UReportDto dto;
         };
     private:
         std::unordered_map<ch_id_t, Channel*> channels;
-        std::queue<ChannelReq> req_queue;
-        std::mutex req_mtx;
+        std::queue<ChannelReport> reports;
+        std::mutex report_mtx;
     public:
         ChannelServer(const int max_fd = 256, const msec to = 0);
         ~ChannelServer();
-        void report(const ChannelReq& req);
+        void report(const ChannelReport& req);
     protected:
-        virtual void on_switch(const fd_t from, const char* target, Json& root, const std::string& payload) override;
+        virtual void on_req(const fd_t from, const char* target, Json& root) override;
 		void consume_report();
-    };
+	private:
+		Channel* get_channel(const ch_id_t channel_id);
+};
 
 
 #endif

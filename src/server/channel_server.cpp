@@ -22,14 +22,14 @@ ChannelServer::~ChannelServer() {
     channels.clear();
 }
 
-void ChannelServer::report(const ChannelReq& req) {
-    std::lock_guard<std::mutex> lock(req_mtx);
-    req_queue.push(req);
+void ChannelServer::report(const ChannelReport& req) {
+    std::lock_guard<std::mutex> lock(report_mtx);
+    reports.push(req);
 }
 
 
 #pragma region PROTECTED_FUNC
-void ChannelServer::on_switch(const fd_t from, const char* target, Json& root, const std::string& payload) {
+void ChannelServer::on_req(const fd_t from, const char* target, Json& root) {
     switch (hash(target))
     {
     case hash("join"):
@@ -37,20 +37,16 @@ void ChannelServer::on_switch(const fd_t from, const char* target, Json& root, c
     case hash("JOIN"):
         {
             ch_id_t channel_id;
+			msec64 timestamp;
 			const char* user_name;
-			__UNPACK_JSON(root, "{s:I,s:s}", "channel_id", &channel_id, "user_id", &user_name) {
-                if (channels.find(channel_id) == channels.end()) {
-                    channels[channel_id] = new Channel(this);
-                    LOG(_CG_ "Channel %u created." _EC_, channel_id);
-                }
+			__UNPACK_JSON(root, "{s:I,s:I,s:s}", "channel_id", &channel_id, "timestamp", &timestamp, "user_id", &user_name) {
+				JoinReqDto req = { .channel_id = channel_id, .timestamp = timestamp, .user_id = std::string(user_name) };
+                get_channel(channel_id)->join_and_logging(from, req, false);
 
-                channels[channel_id]->join(from);
-
-				// TODO: 다음 두 줄을 channel에서 upward 방향 처리에서 join/rejoin 구분하기
                 con_tracker->delete_client(from);
 				name_map[from] = std::string(user_name); // user_%d -> real user_name
             } __UNPACK_FAIL {
-                iERROR("Malformed JSON message, missing channel_id.");
+                iERROR("Malformed JSON message, missing channel_id or timestamp or user_id.");
             }
         }
         break;
@@ -59,31 +55,37 @@ void ChannelServer::on_switch(const fd_t from, const char* target, Json& root, c
     }
 }
 
-// TODO: 삭제 고려
 void ChannelServer::consume_report() {
-	std::lock_guard<std::mutex> lock(req_mtx);
-    while (!req_queue.empty()) {
-        ChannelReq req = req_queue.front();
-        req_queue.pop();
-    	if (req.type == ChannelReq::SWITCH) {
-			if (req.is_leave) {
-				// Move to Lobby
-				try {
-					con_tracker->add_client(req.fd);
-					user_map.erase(req.fd);
-					LOG(_CG_ "User %d returned to lobby." _EC_, req.fd);
-				} catch (...) {}
-			} else {
-				// Move to Target Channel
-				if (channels.find(req.target) == channels.end()) {
-					channels[req.target] = new Channel(this);
-					LOG(_CG_ "Channel %u created." _EC_, req.target);
-				}
-				channels[req.fd]->leave(req.fd);
-				channels[req.target]->join(req.fd);
-				user_map[req.fd] = req.target;
-            }
-        }
+	std::lock_guard<std::mutex> lock(report_mtx);
+    while (!reports.empty()) {
+        ChannelReport req = reports.front();
+        reports.pop();
+		switch (hash(req.type)) {
+		case hash("join"):
+		case hash("Join"):
+		case hash("JOIN"):
+			{
+				ch_id_t channel_id = req.dto.rejoin->channel_id;
+				msec64 timestamp = req.dto.rejoin->timestamp;
+				JoinReqDto join_req = { .channel_id = channel_id, .timestamp = timestamp };
+				// TODO?: make union join & rejoin
+				get_channel(channel_id)->join_and_logging(req.from, join_req, true);
+				delete req.dto.rejoin;
+			}
+			break;
+		}
     }
+}
+#pragma endregion
+
+#pragma region PRIVATE_FUNC
+Channel* ChannelServer::get_channel(const ch_id_t channel_id) {
+	Channel* channel;
+	if (channels.find(channel_id) == channels.end()) {
+		channel = new Channel(this);
+		channels[channel_id] = channel;
+		LOG(_CG_ "Channel %u created." _EC_, channel_id);
+	}
+	return channel;
 }
 #pragma endregion

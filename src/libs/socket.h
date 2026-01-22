@@ -1,6 +1,8 @@
 #ifndef __SOCKET_H__
 #define __SOCKET_H__
 
+#include <cstdint>
+
 #define FAILED(mth)         ((mth) == -1)
 #define FD_ERR              -1
 

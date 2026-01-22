@@ -16,7 +16,7 @@
 fd_t ServerBase::fd = -1;
 std::unordered_map<fd_t, std::string> ServerBase::name_map;
 
-ServerBase::ServerBase(const int max_fd, const msec to): con_tracker(nullptr), timeout(to) {
+ServerBase::ServerBase(const int max_fd, const msec to): con_tracker(nullptr), comm(nullptr), timeout(to) {
     try {
         branch_id = static_cast<int>(std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count());
@@ -31,22 +31,28 @@ ServerBase::ServerBase(const int max_fd, const msec to): con_tracker(nullptr), t
             throw std::runtime_error("Failed to allocate Connection Tracker.");
         con_tracker->init();
 
-        task_runner.new_session(2);
+		comm = new Communication();
+
+        task_runner.new_session(3);
+		// Cleanup Qs
         task_runner.pushb(0, [this]() {
             next_deletion.clear();
-            cur_msgs.clear();
         });
-        task_runner.pushb(0, [this]() {
+		// Polling
+        task_runner.pushb(1, [this]() {
             con_tracker->polling(timeout);
         });
+		// Handle Events
+		task_runner.pushb(1, [this]() {
+			const pollev* events = con_tracker->get_ev();
+			const int evcnt = con_tracker->get_evcnt();
 
-        task_runner.pushb(1, [this]() {
-            resolve_timestamps();
-        });
-        task_runner.pushb(1, [this]() {
-            resolve_broadcast();
-        });
-        task_runner.pushb(1, [this]() {
+			for (int i = 0; i < evcnt; i++) {
+				handle_events(events[i]);
+			}
+		});
+		// Deletion fds
+        task_runner.pushb(2, [this]() {
             resolve_deletion();
         });
     } catch (const std::exception& e) {
@@ -57,21 +63,23 @@ ServerBase::ServerBase(const int max_fd, const msec to): con_tracker(nullptr), t
 ServerBase::~ServerBase() {
     if (con_tracker)
         delete con_tracker;
+	
+	if (comm)
+		delete comm;
 
     if (fd != FD_ERR) { // close listening socket
         close(fd);
         fd = FD_ERR;
     }
 
-    rbuf.clear();
-    mq.clear();
     next_deletion.clear();
 }
 
 void ServerBase::proc() {
     try {
         while (1) {
-            frame();
+    		task_runner.run();
+            // frame();
         }
     } catch(const std::exception& e) {
         iERROR("%s", e.what());
@@ -125,167 +133,40 @@ void ServerBase::handle_events(const pollev event) {
     if (fd == ServerBase::fd) {
         on_accept();
     } else if (evs & (EPOLLHUP | EPOLLERR)) {
-        next_deletion.push_back(fd);
-    } else if (evs & EPOLLIN) {
-        try {
-            recv_frame(fd);
-        } catch (const std::exception& e) {
-            iERROR("%s", e.what());
-            next_deletion.push_back(fd);
-        }
+		on_disconnect(fd);
+	} else if (evs & EPOLLIN) {
+        on_recv(fd);
     }
     // 필요하면 EPOLLOUT도 처리
 }
 #pragma endregion
 
 #pragma region PROTECTED_FUNC
-void ServerBase::recv_frame(const int fd) {
-    // NEEDS: attach 4-byte length header to each frame
 
-    char buf[4096];
-    ssize_t n = recv(fd, buf, sizeof(buf), 0);
-    if (n < 0) {
-        throw std::runtime_error("Minus frame.");
-    } else if (n == 0) {
-		return; // disconnected
-	}
-
-    std::string& acc = rbuf[fd];
-    acc.append(buf, n);
-
-    while (acc.size() >= 4) {
-        uint32_t len = ((uint8_t)acc[0] << 24) | ((uint8_t)acc[1] << 16) | ((uint8_t)acc[2] << 8) | (uint8_t)acc[3];
-        if (len > MAX_FRAME_SIZE) {
-            throw runtime_errorf("Frame too large from fd %d", fd);
-        } else if (len == 0) {
-            iERROR("Empty frame from fd %d", fd);
-            acc.erase(0, 4);
-            continue;
-        } else if (acc.size() < 4 + len) {
-            break; // wait for full frame
-        }
-        
-        std::string payload = acc.substr(4, len);
-
-        resolve_payload(fd, payload);
-        
-        acc.erase(0, 4 + len);
-    }
-}
-
-void ServerBase::send_frame(const int fd, const std::string& payload) {
-    uint32_t len = static_cast<uint32_t>(payload.size());
-    if (len == 0) return;
-
-    unsigned char header[4];
-    header[0] = (len >> 24) & 0xFF;
-    header[1] = (len >> 16) & 0xFF;
-    header[2] = (len >> 8) & 0xFF;
-    header[3] = len & 0xFF;
-
-    ssize_t sent = send(fd, header, 4, 0);
-    if (sent != 4) {
-        throw std::runtime_error("Invalid header sent.");
-    }
-
-    size_t total = 0;
-    while (total < payload.size()) {
-        ssize_t n = send(fd, payload.data() + total, payload.size() - total, 0);
-        if (n <= 0) {
-            throw std::runtime_error("Minus frame.");
-        }
-        total += static_cast<size_t>(n);
-    }
-}
-
-void ServerBase::broadcast(const std::string& payload) {
-    for (const fd_t& fd : con_tracker->get_clients()) {
-        try {
-            send_frame(fd, payload);
-        } catch(const std::exception&) {
-            next_deletion.push_back(fd);
-        }
-    }
-}
-
-void ServerBase::frame() {
-    task_runner.push_oncef(1, [this]() {
-        auto events = con_tracker->get_ev();
-        for (int i = 0; i < con_tracker->get_evcnt(); i++)
-            handle_events(events[i]);
-    });
-    task_runner.run();
-}
-
-void ServerBase::resolve_timestamps() {
-    for (const std::string& msg : mq) {
-        json_error_t err;
-        Json root(json_loads(msg.c_str(), 0, &err));
-        if (root.get() == nullptr) {
-            iERROR("Failed to parse JSON: %s", err.text);
-            continue;
-        }
-        
-        msec64 timestamp;
-		const char* buf;
-        __UNPACK_JSON(root, "{s:I,s:s}", "timestamp", &timestamp, "text", &buf) {
-            cur_msgs.emplace(timestamp, std::string(buf));
-        } __UNPACK_FAIL {
-            iERROR("Malformed JSON message, missing timestamp.");
-        }
-    }
-    mq.clear();
-}
-
-void ServerBase::resolve_payload(const fd_t from, const std::string& payload) {
-    json_error_t err;
-    Json root(json_loads(payload.c_str(), 0, &err));
-    if (root.get() == nullptr) {
-        iERROR("Failed to parse JSON: %s", err.text);
-        return;
-    }
-    
-    const char* type;
-    __UNPACK_JSON(root, "{s:s}", "type", &type) {
-        on_switch(from, type, root, payload);
-    } __UNPACK_FAIL {
-        iERROR("Malformed JSON message, missing type.");
-    }
-}
-
-void ServerBase::resolve_broadcast() {
-    Json cur_window(json_array());
-    for (const auto& [timestamp, msg] : cur_msgs) {
-		__ALLOC_JSON_NEW(payload, "{s:s,s:s,s:s,s:I}",
-			"type", "user", "user_id", name_map.begin()->second.c_str(), "event", msg.c_str(), "timestamp", timestamp) {
-
-		} __ALLOC_FAIL {
-			iERROR("Failed to create broadcast JSON.");
-			continue;
-		}
-        json_array_append_new(cur_window.get(), payload.release());
-    }
-    CharDump dumped(json_dumps(cur_window.get(), 0));
-    if (dumped) {
-        broadcast(dumped.get());
-    }
-}
+// void ServerBase::frame() {
+//     task_runner.run();
+// }
 
 void ServerBase::resolve_deletion() {
+	if (!con_tracker) return;
     for (const fd_t fd : next_deletion) {
-        con_tracker->delete_client(fd);
+		try {
+        	con_tracker->delete_client(fd);
+		} catch (...) {
+			continue;
+		}
 		name_map.erase(fd);
         close(fd);
-        rbuf.erase(fd);
+		comm->clear_buffer(fd);
     }
 }
 
-void ServerBase::on_switch(const fd_t from, const char* target, Json& root, const std::string& payload) {
+void ServerBase::on_req(const fd_t from, const char* target, Json& root) {
     switch (hash(target))
     {
-    case hash("message"):
-        mq.push_back(payload);
-        break;
+    // case hash("message"):
+    //     mq.push_back(payload);
+    //     break;
     
     default:
         break;
@@ -293,6 +174,7 @@ void ServerBase::on_switch(const fd_t from, const char* target, Json& root, cons
 }
 
 void ServerBase::on_accept() {
+	if (!con_tracker) return;
     fd_t client = accept(ServerBase::fd, nullptr, nullptr);
     if (client == FD_ERR) {
         iERROR("Failed to accept new connection.");
@@ -306,6 +188,20 @@ void ServerBase::on_accept() {
             con_tracker->delete_client(client);
             close(client);
         }
+    }
+}
+
+void ServerBase::on_disconnect(const fd_t fd) {
+	next_deletion.push_back(fd);
+}
+
+void ServerBase::on_recv(const fd_t from) {
+	try {
+		if (!comm) return;
+		std::vector<std::string> frames = comm->recv_frame(from);
+    } catch (const std::exception& e) {
+        iERROR("%s", e.what());
+        next_deletion.push_back(from);
     }
 }
 

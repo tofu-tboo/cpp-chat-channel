@@ -1,8 +1,6 @@
 #ifndef __SERVER_BASE_H__
 #define __SERVER_BASE_H__
 
-#define MAX_FRAME_SIZE      16 * 1024
-
 #define iERROR(...)         LOG(_CR_ "[%x] " _EC_, branch_id); ERROR(__VA_ARGS__)
 
 #include <unordered_map>
@@ -12,17 +10,23 @@
 #include <vector>
 #include <deque>
 #include <functional>
-#include <cstdint>
 #include <stdexcept>
 
 #include "../libs/json.h"
 #include "../libs/socket.h"
 #include "../libs/connection_tracker.h"
 #include "../libs/task_runner.h"
+#include "../libs/communication.h"
 
 /*
 All servers have only one shared file descriptor listening on a port.
 ServerBase assumed that it has one channel.
+*/
+
+/* Requirement of ServerBase 
+- fd Management: Manage clinets connected to the listening fd. Entrusted to ConnectionTracker class.
+- Frame Handling: receive and send frames from clients with customizable frame format. But, default is 4-byte length header + payload. Entrusted to Communication class.
+- Separate Tasks: Use TaskRunner to separate tasks like polling, deletion resolution, payload resolution. But, ServerBase only does polling and deletion resolution. The payload resolution is left to derived classes. 
 */
 
 class ServerBase {
@@ -32,12 +36,10 @@ class ServerBase {
     protected:
         int branch_id; // manager branch's id
         ConnectionTracker* con_tracker;
+		Communication* comm;
 
         msec timeout;
 
-        std::unordered_map<fd_t, std::string> rbuf; // per-connection accumulation buffer
-        std::vector<std::string> mq; // parsed json frames
-        std::multimap<msec64, std::string> cur_msgs; // sorted by timestamp
         std::vector<fd_t> next_deletion;
 
         TaskRunner<void()> task_runner;
@@ -45,27 +47,21 @@ class ServerBase {
         ServerBase(const int max_fd = 256, const msec to = 0);
         ~ServerBase();
 
-        virtual void proc();
+        virtual void proc(); // 외부에서의 서버 진입점
 
     private:
         void set_network();
         void handle_events(const pollev event);
     protected:
-        // Helpers
-        virtual void recv_frame(const fd_t fd); // frame format can be overridden
-        virtual void send_frame(const fd_t fd, const std::string& payload); // frame format can be overridden
-        virtual void broadcast(const std::string& payload);
-
         // Tasks
-        virtual void frame();
-        virtual void resolve_timestamps();
-        virtual void resolve_payload(const fd_t from, const std::string& payload);
-        virtual void resolve_broadcast();
+        // virtual void frame();
         virtual void resolve_deletion();
 
         // Hooks
-        virtual void on_switch(const fd_t from, const char* target, Json& root, const std::string& payload); // handle both pure json & payload
+        virtual void on_req(const fd_t from, const char* target, Json& root); // handle both pure json & payload
         virtual void on_accept();
+		virtual void on_disconnect(const fd_t fd);
+		virtual void on_recv(const fd_t from);
 };
 
 #endif
