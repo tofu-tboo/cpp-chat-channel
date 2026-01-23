@@ -14,12 +14,11 @@ typedef struct {
 } MessageReqDto;
 
 
-// For union, recommended to match seq of members (aligning)
 typedef struct {
 	// std::string type;
 	ch_id_t channel_id;
 	msec64 timestamp;
-	std::string user_id;
+	std::string user_name;
 } JoinReqDto;
 
 typedef struct {
@@ -27,6 +26,11 @@ typedef struct {
 	ch_id_t channel_id;
 	msec64 timestamp;
 } RejoinReqDto;
+
+typedef union {
+	JoinReqDto* join;
+	RejoinReqDto* rejoin;
+} UJoinDto;
 
 typedef union {
 	JoinReqDto* join;

@@ -79,7 +79,7 @@ static void display_message(const std::string& payload, const std::string& self_
         return;
     }
 
-    const char* user = json_string_value(json_object_get(obj, "user_id"));
+    const char* user = json_string_value(json_object_get(obj, "user_name"));
     const char* text = nullptr;
     json_t* payload_obj = json_object_get(obj, "payload");
     if (json_is_object(payload_obj)) {
@@ -198,7 +198,7 @@ int main(int argc, char* argv[]) {
             json_t* obj = json_pack("{ssss{s:s}}",
                                     "type", "message",
                                     "channel_id", "default",
-                                    "user_id", user,
+                                    "user_name", user,
                                     "payload", "text", line.c_str());
             if (!obj) {
                 ERROR("json_pack failed");

@@ -13,7 +13,7 @@ from typing import Tuple, List
 def make_msg_payload(user: str, text: str) -> bytes:
     body = json.dumps({
         "type": "message",
-        "user_id": user,
+        "user_name": user,
         "payload": {"text": text},
         "timestamp": int(datetime.datetime.now().timestamp())
     }).encode("utf-8")
@@ -129,7 +129,7 @@ async def handle_client(idx: int, host: str, port: int, delay: Tuple[float, floa
                     payload = json.loads(data.decode("utf-8"))
                     p_type = payload.get("type", "")
                     if p_type == "message":
-                        from_user = payload.get("user_id", "?")
+                        from_user = payload.get("user_name", "?")
                         text = payload.get("payload", {}).get("text", "")
                         if current_channel != -1:
                             channel_queues[current_channel].put(("msg", from_user, text))

@@ -42,8 +42,12 @@ void ChatServer::resolve_timestamps() {
 void ChatServer::resolve_broadcast() {
     Json cur_window(json_array());
     for (const auto& [timestamp, msg] : cur_msgs) {
+		const char* user_name = nullptr;
+		if (!get_user_name(msg.first, user_name)) {
+			continue;
+		}
 		__ALLOC_JSON_NEW(payload, "{s:s,s:s,s:s,s:I}",
-			"type", "user", "user_id", name_map[msg.first].c_str(), "event", msg.second.c_str(), "timestamp", timestamp) {
+			"type", "user", "user_name", user_name, "event", msg.second.c_str(), "timestamp", timestamp) {
         	json_array_append_new(cur_window.get(), payload);
 		} __ALLOC_FAIL {
 			iERROR("Failed to create broadcast JSON.");

@@ -86,6 +86,24 @@ void ServerBase::proc() {
     }
 }
 
+bool ServerBase::get_user_name(const fd_t fd, std::string& out_user_name) const {
+	auto it = name_map.find(fd);
+	if (it == name_map.end()) {
+		return false;
+	}
+	out_user_name = it->second;
+	return true;
+}
+
+bool ServerBase::get_user_name(const fd_t fd, const char* out_user_name) const {
+	std::string user_name;
+	if (!get_user_name(fd, user_name)) {
+		return false;
+	}
+	strcpy((char*)out_user_name, user_name.c_str());
+	return true;
+}
+
 #pragma region PRIVATE_FUNC
 void ServerBase::set_network() {
     if (fd != FD_ERR) {

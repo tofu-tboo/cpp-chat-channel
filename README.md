@@ -15,7 +15,7 @@
 //REQ:
 {
 	type: "join", // Join, JOIN
-	user_id?: string,
+	user_name?: string,
 	channel_id: int,
 	timestamp: int
 }
@@ -24,7 +24,7 @@
 {
 	type: "system",
 	event: "join" | "rejoin",
-	user_id: string,
+	user_name: string,
 	timestamp: int
 }
 ```
@@ -36,7 +36,7 @@
 {
 	type: "system",
 	event: "leave",
-	user_id: string,
+	user_name: string,
 	timestamp: int
 }
 ```
@@ -54,7 +54,7 @@
 //RES:
 {
 	type: "user",
-	user_id: string,
+	user_name: string,
 	event: string, // message filtered and processed by server from user
 	timestamp: int
 }

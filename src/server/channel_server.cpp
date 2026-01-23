@@ -19,6 +19,15 @@ ChannelServer::~ChannelServer() {
         delete channel;
     }
 
+    // Clean up pending reports to prevent memory leaks
+    std::lock_guard<std::mutex> lock(report_mtx);
+    while (!reports.empty()) {
+        ChannelReport req = reports.front();
+        reports.pop();
+        if (hash(req.type) == hash("join")) {
+            delete req.dto.rejoin;
+        }
+    }
     channels.clear();
 }
 
@@ -39,14 +48,16 @@ void ChannelServer::on_req(const fd_t from, const char* target, Json& root) {
             ch_id_t channel_id;
 			msec64 timestamp;
 			const char* user_name;
-			__UNPACK_JSON(root, "{s:I,s:I,s:s}", "channel_id", &channel_id, "timestamp", &timestamp, "user_id", &user_name) {
-				JoinReqDto req = { .channel_id = channel_id, .timestamp = timestamp, .user_id = std::string(user_name) };
-                get_channel(channel_id)->join_and_logging(from, req, false);
+			__UNPACK_JSON(root, "{s:I,s:I,s:s}", "channel_id", &channel_id, "timestamp", &timestamp, "user_name", &user_name) {
+				JoinReqDto req = { .channel_id = channel_id, .timestamp = timestamp, .user_name = std::string(user_name) };
+                UJoinDto u_req;
+                u_req.join = &req;
+                get_channel(channel_id)->join_and_logging(from, u_req, false);
 
                 con_tracker->delete_client(from);
 				name_map[from] = std::string(user_name); // user_%d -> real user_name
             } __UNPACK_FAIL {
-                iERROR("Malformed JSON message, missing channel_id or timestamp or user_id.");
+                iERROR("Malformed JSON message, missing channel_id or timestamp or user_name.");
             }
         }
         break;
@@ -66,11 +77,10 @@ void ChannelServer::consume_report() {
 		case hash("JOIN"):
 			{
 				ch_id_t channel_id = req.dto.rejoin->channel_id;
-				msec64 timestamp = req.dto.rejoin->timestamp;
-				JoinReqDto join_req = { .channel_id = channel_id, .timestamp = timestamp };
-				// TODO?: make union join & rejoin
-				get_channel(channel_id)->join_and_logging(req.from, join_req, true);
-				delete req.dto.rejoin;
+				// msec64 timestamp = req.dto.rejoin->timestamp;
+				UJoinDto u_req = { .rejoin = req.dto.rejoin };
+				get_channel(channel_id)->join_and_logging(req.from, u_req, true);
+                delete req.dto.rejoin; // Consumer takes responsibility for deletion
 			}
 			break;
 		}

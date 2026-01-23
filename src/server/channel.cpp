@@ -37,41 +37,41 @@ void Channel::join(const fd_t fd) {
     }
 }
 
-void Channel::join_and_logging(const fd_t fd, JoinReqDto req, bool re) {
-	try {
+void Channel::join_and_logging(const fd_t fd, UJoinDto req, bool re) {
+	try {		
+        msec64 ts = 0;
+        std::string uid;
+		std::string event;
+
+        if (re && req.rejoin) {
+            ts = req.rejoin->timestamp;
+            // Rejoin의 경우 DTO에 user_name가 없으므로 서버의 name_map에서 조회하거나 알 수 없음 처리
+			if (!get_user_name(fd, uid)) {
+				next_deletion.push_back(fd); // 이름을 알 수 없으면 강제 퇴장
+				return;
+			}
+
+			event = "rejoin";
+        } else if (!re && req.join) {
+            ts = req.join->timestamp;
+            uid = req.join->user_name;
+			event = "join";
+        }
+
+		
+		MessageReqDto sys_msg;
+		sys_msg.text = event;
+		sys_msg.timestamp = ts;
+		mq.push_back({fd, sys_msg});
+
 		join(fd);
-		// TODO: logging using req (req.user_id, req.timestamp, etc.)
-	} catch (...) {}
+        LOG(_CB_ "[Join] User %s (fd: %d) joined channel %u at %lu" _EC_, uid.c_str(), fd, channel_id, ts);
+	} catch (const std::exception& e) {
+        iERROR("Logging failed: %s", e.what());
+    }
 }
 
 #pragma region PROTECTED_FUNC
-void Channel::resolve_timestamps() {
-    for (const auto& [from, msg_req] : mq) {        
-        cur_msgs.emplace(msg_req.timestamp, std::pair<fd_t, std::string>{from, msg_req.text});
-    }
-    mq.clear();
-}
-
-void Channel::resolve_broadcast() {
-    Json cur_window(json_array());
-    for (const auto& [timestamp, msg] : cur_msgs) {
-		__ALLOC_JSON_NEW(payload, "{s:s,s:s,s:s,s:I}",
-			"type", "user", "user_id", name_map[msg.first].c_str(), "event", msg.second.c_str(), "timestamp", timestamp) {
-        	json_array_append_new(cur_window.get(), payload);
-		} __ALLOC_FAIL {
-			iERROR("Failed to create broadcast JSON.");
-			continue;
-		}
-    }
-    CharDump dumped(json_dumps(cur_window.get(), 0));
-    if (dumped) {
-		if (!comm || !con_tracker) return;
-		std::vector<fd_t> failed_fds = comm->broadcast(con_tracker->get_clients(), dumped.get());
-		for (const fd_t& fd : failed_fds) {
-			next_deletion.push_back(fd);
-		}
-    }
-}
 
 void Channel::on_accept() {} // accept only occured in lobby(ChannelServer)
 void Channel::on_req(const fd_t from, const char* target, Json& root) {
@@ -84,7 +84,7 @@ void Channel::on_req(const fd_t from, const char* target, Json& root) {
         {
 			ch_id_t channel_id;
 			msec64 timestamp;
-			__UNPACK_JSON(root, "{s:I,s:I,s:s}", "channel_id", &channel_id, "timestamp", &timestamp, "user_id", nullptr) {
+			__UNPACK_JSON(root, "{s:I,s:I,s:s}", "channel_id", &channel_id, "timestamp", &timestamp, "user_name", nullptr) {
 				UReportDto dto;
 				dto.rejoin = new RejoinReqDto{ .channel_id = channel_id, .timestamp = timestamp };
 				leave(from);

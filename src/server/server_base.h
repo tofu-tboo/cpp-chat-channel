@@ -49,6 +49,10 @@ class ServerBase {
 
         virtual void proc(); // 외부에서의 서버 진입점
 
+		bool get_user_name(const fd_t fd, std::string& out_user_name) const;
+		bool get_user_name(const fd_t fd, const char* out_user_name) const;
+		
+
     private:
         void set_network();
         void handle_events(const pollev event);
