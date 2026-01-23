@@ -4,6 +4,7 @@
 #include "server_base.h"
 #include "../libs/socket.h"
 #include "../libs/dto.h"
+#include <mutex>
 
 /* Requirement of ChatServer 
 - Payload Resolution: process received payloads from clients. The format is JSON strings.
@@ -14,12 +15,12 @@
 class ChatServer : public ServerBase {
 	protected:
 		std::multimap<msec64, std::pair<fd_t, std::string>> cur_msgs; // timestamped messages
+        std::mutex mq_mtx;
 		std::vector<std::pair<fd_t, MessageReqDto>> mq; // message queue (raw JSON strings)
 	public:
 		ChatServer(const int max_fd = 32, const msec to = 0);
 		~ChatServer();
 	protected:
-        virtual void resolve_payload(const fd_t from, const std::string& payload);
 		virtual void resolve_timestamps();
         virtual void resolve_broadcast();
 

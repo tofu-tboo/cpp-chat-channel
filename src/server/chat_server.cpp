@@ -16,23 +16,8 @@ ChatServer::~ChatServer() {
 
 #pragma region PROTECTED_FUNC
 
-void ChatServer::resolve_payload(const fd_t from, const std::string& payload) {
-    json_error_t err;
-    Json root(json_loads(payload.c_str(), 0, &err));
-    if (root.get() == nullptr) {
-        iERROR("Failed to parse JSON: %s", err.text);
-        return;
-    }
-    
-    const char* type;
-    __UNPACK_JSON(root, "{s:s}", "type", &type) {
-        on_req(from, type, root);
-    } __UNPACK_FAIL {
-        iERROR("Malformed JSON message, missing type.");
-    }
-}
-
 void ChatServer::resolve_timestamps() {
+    std::lock_guard<std::mutex> lock(mq_mtx);
     for (const auto& [from, msg_req] : mq) {
 		MsgType type = msg_req.type;
 		if (type == USER) {
@@ -73,11 +58,16 @@ void ChatServer::on_req(const fd_t from, const char* target, Json& root) {
 	switch (hash(target))
 	{
 	case hash("message"):
+	case hash("Message"):
+	case hash("MESSAGE"):
 		const char* text;
 		msec64 timestamp;
-		__UNPACK_JSON(root, "{s:s,s:s,s:I}", "type", nullptr, "text", &text, "timestamp", &timestamp) {
+		__UNPACK_JSON(root, "{s:s,s:I}", "text", &text, "timestamp", &timestamp) {
 			MessageReqDto msg_req = { .type = USER, .text = std::string(text), .timestamp = timestamp };
-			mq.push_back({from, msg_req});
+            {
+                std::lock_guard<std::mutex> lock(mq_mtx);
+			    mq.push_back({from, msg_req});
+            }
 		} __UNPACK_FAIL {
 			iERROR("Malformed JSON message, missing timestamp or text.");
 			return;
@@ -94,7 +84,19 @@ void ChatServer::on_recv(const fd_t from) {
 		if (!comm) return;
 		std::vector<std::string> frames = comm->recv_frame(from);
 		for (const std::string& frame : frames) {
-			resolve_payload(from, frame);
+			json_error_t err;
+			Json root(json_loads(frame.c_str(), 0, &err));
+			if (root.get() == nullptr) {
+				iERROR("Failed to parse JSON: %s", err.text);
+				return;
+			}
+			
+			const char* type;
+			__UNPACK_JSON(root, "{s:s}", "type", &type) {
+				on_req(from, type, root);
+			} __UNPACK_FAIL {
+				iERROR("Malformed JSON message, missing type.");
+			}
 		}
 	} catch (const std::exception& e) {
         iERROR("%s", e.what());

@@ -40,13 +40,13 @@ void Channel::join(const fd_t fd) {
 void Channel::join_and_logging(const fd_t fd, UJoinDto req, bool re) {
 	try {		
         msec64 ts = 0;
-        std::string uid;
+        std::string uname;
 		std::string event;
 
         if (re && req.rejoin) {
             ts = req.rejoin->timestamp;
             // Rejoin의 경우 DTO에 user_name가 없으므로 서버의 name_map에서 조회하거나 알 수 없음 처리
-			if (!get_user_name(fd, uid)) {
+			if (!get_user_name(fd, uname)) {
 				next_deletion.push_back(fd); // 이름을 알 수 없으면 강제 퇴장
 				return;
 			}
@@ -54,17 +54,20 @@ void Channel::join_and_logging(const fd_t fd, UJoinDto req, bool re) {
 			event = "rejoin";
         } else if (!re && req.join) {
             ts = req.join->timestamp;
-            uid = req.join->user_name;
+            uname = req.join->user_name;
 			event = "join";
         }
 
 
 		MessageReqDto sys_msg = { .type = SYSTEM, .text = event, .timestamp = ts };
 
-		mq.push_back({fd, sys_msg});
+        {
+            std::lock_guard<std::mutex> lock(mq_mtx);
+		    mq.push_back({fd, sys_msg});
+        }
 
 		join(fd);
-        LOG(_CB_ "[Join] User %s (fd: %d) joined channel %u at %lu" _EC_, uid.c_str(), fd, channel_id, ts);
+        LOG(_CB_ "[Join] User (fd: %d) joined channel %u at %lu" _EC_, fd, channel_id, ts);
 	} catch (const std::exception& e) {
         iERROR("Logging failed: %s", e.what());
     }
@@ -76,23 +79,32 @@ void Channel::on_accept() {} // accept only occured in lobby(ChannelServer)
 void Channel::on_req(const fd_t from, const char* target, Json& root) {
     switch (hash(target)) {
     case hash("message"):
+    case hash("Message"):
+    case hash("MESSAGE"):
 		ChatServer::on_req(from, target, root);
         break;
 	// TODO: leave === disconnection
     case hash("join"):
+    case hash("Join"):
+    case hash("JOIN"):
         {
 			ch_id_t channel_id;
 			msec64 timestamp;
-			__UNPACK_JSON(root, "{s:I,s:I,s:s}", "channel_id", &channel_id, "timestamp", &timestamp, "user_name", nullptr) {
+			__UNPACK_JSON(root, "{s:I,s:I}", "channel_id", &channel_id, "timestamp", &timestamp) {
 				UReportDto dto;
 				dto.rejoin = new RejoinReqDto{ .channel_id = channel_id, .timestamp = timestamp };
 
 				MessageReqDto sys_msg = { .type = SYSTEM, .text = "leave", .timestamp = timestamp };
-				mq.push_back({from, sys_msg});
+                {
+                    std::lock_guard<std::mutex> lock(mq_mtx);
+				    mq.push_back({from, sys_msg});
+                }
 
 				leave(from);
+		
+				LOG(_CB_ "[Leave] User (fd: %d) left channel %u at %lu" _EC_, from, channel_id, timestamp);
 
-				server->report({"join", from, dto}); // Request switch channel
+				server->report({ChannelServer::ChannelReport::JOIN, from, dto}); // Request switch channel
 			} __UNPACK_FAIL {
 				iERROR("Malformed JSON message, missing channel_id.");
 			}

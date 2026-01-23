@@ -1,4 +1,6 @@
 
+#include <cstdio>
+#include <string>
 #include <sys/socket.h>
 
 #include "communication.h"
@@ -23,7 +25,13 @@ std::vector<std::string> Communication::recv_frame(const fd_t fd) {
     acc.append(buf, n);
 
     while (acc.size() >= 4) {
-        uint32_t len = ((uint8_t)acc[0] << 24) | ((uint8_t)acc[1] << 16) | ((uint8_t)acc[2] << 8) | (uint8_t)acc[3];
+        uint32_t len = 0;
+        try {
+            len = std::stoul(acc.substr(0, 4), nullptr, 16);
+        } catch (...) {
+            throw std::runtime_error("Invalid frame header.");
+        }
+
         if (len > MAX_FRAME_SIZE) {
             throw runtime_errorf("Frame too large from fd %d", fd);
         } else if (len == 0) {
@@ -35,7 +43,7 @@ std::vector<std::string> Communication::recv_frame(const fd_t fd) {
         
         std::string payload = acc.substr(4, len);
 		frames.push_back(payload);
-        
+
         acc.erase(0, 4 + len);
     }
 
@@ -44,12 +52,12 @@ std::vector<std::string> Communication::recv_frame(const fd_t fd) {
 void Communication::send_frame(const fd_t fd, const std::string& payload) {
 	uint32_t len = static_cast<uint32_t>(payload.size());
     if (len == 0) return;
+    if (len > MAX_FRAME_SIZE) {
+        throw std::runtime_error("Frame too large.");
+    }
 
-    unsigned char header[4];
-    header[0] = (len >> 24) & 0xFF;
-    header[1] = (len >> 16) & 0xFF;
-    header[2] = (len >> 8) & 0xFF;
-    header[3] = len & 0xFF;
+    char header[5];
+    std::snprintf(header, sizeof(header), "%04x", len);
 
     ssize_t sent = send(fd, header, 4, 0);
     if (sent != 4) {

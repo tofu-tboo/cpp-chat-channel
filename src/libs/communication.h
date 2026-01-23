@@ -1,7 +1,7 @@
 #ifndef __COMMUNICATION_H__
 #define __COMMUNICATION_H__
 
-#define MAX_FRAME_SIZE      16 * 1024
+#define MAX_FRAME_SIZE      (16 * 1024)
 
 #include <unordered_set>
 #include <unordered_map>

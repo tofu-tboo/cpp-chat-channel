@@ -52,11 +52,8 @@ static int connect_tcp(const char* host, const char* port) {
 
 static bool send_frame(int fd, const std::string& payload) {
     uint32_t len = static_cast<uint32_t>(payload.size());
-    unsigned char header[4] = {
-        static_cast<unsigned char>((len >> 24) & 0xFF),
-        static_cast<unsigned char>((len >> 16) & 0xFF),
-        static_cast<unsigned char>((len >> 8) & 0xFF),
-        static_cast<unsigned char>(len & 0xFF)};
+    char header[5];
+    snprintf(header, sizeof(header), "%04x", len);
 
     ssize_t n = send(fd, header, 4, 0);
     if (n != 4) return false;
@@ -103,10 +100,11 @@ static bool recv_frames(int fd, std::string& acc, const std::string& self_user) 
     acc.append(buf, n);
 
     while (acc.size() >= 4) {
-        uint32_t len = (static_cast<uint8_t>(acc[0]) << 24) |
-                       (static_cast<uint8_t>(acc[1]) << 16) |
-                       (static_cast<uint8_t>(acc[2]) << 8) |
-                       static_cast<uint8_t>(acc[3]);
+        uint32_t len = 0;
+        try {
+            len = std::stoul(acc.substr(0, 4), nullptr, 16);
+        } catch (...) { return false; }
+
         if (acc.size() < 4 + len) break;
         std::string payload = acc.substr(4, len);
         display_message(payload, self_user);

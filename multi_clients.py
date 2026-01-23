@@ -10,66 +10,74 @@ import queue
 import tkinter as tk
 from typing import Tuple, List
 
-def make_msg_payload(user: str, text: str) -> bytes:
+def make_header(body: bytes) -> bytes:
+    return f"{len(body):04x}".encode("utf-8")
+
+def make_msg_payload(text: str) -> bytes:
     body = json.dumps({
         "type": "message",
-        "user_name": user,
-        "payload": {"text": text},
-        "timestamp": int(datetime.datetime.now().timestamp())
+        "text": text,
+        "timestamp": int(datetime.datetime.now().timestamp() * 1000)
     }).encode("utf-8")
-    return struct.pack("!I", len(body)) + body
+    return make_header(body) + body
 
-def make_join_payload(channel_id: int) -> bytes:
+def make_join_payload(channel_id: int, user_name: str) -> bytes:
     body = json.dumps({
         "type": "join",
-        "channel_id": channel_id
+        "user_name": user_name,
+        "channel_id": channel_id,
+        "timestamp": int(datetime.datetime.now().timestamp() * 1000)
     }).encode("utf-8")
-    return struct.pack("!I", len(body)) + body
+    return make_header(body) + body
 
 def random_text(min_len: int, max_len: int) -> str:
     length = random.randint(min_len, max_len)
     alphabet = string.ascii_letters + string.digits + " "
     return "".join(random.choice(alphabet) for _ in range(length)).strip()
 
-class ChannelWindow:
-    def __init__(self, root: tk.Tk, channel_id: int, q: queue.Queue):
+class UserWindow:
+    def __init__(self, root: tk.Tk, user_name: str, q: queue.Queue):
         self.q = q
         self.win = tk.Toplevel(root)
-        self.win.title(f"Channel {channel_id}")
-        self.text = tk.Text(self.win, wrap="word", height=20, width=50)
+        self.win.title(f"Client: {user_name}")
+        self.win.geometry("400x500")
+        
+        self.text = tk.Text(self.win, wrap="word", state="disabled")
         scroll = tk.Scrollbar(self.win, command=self.text.yview)
         self.text.configure(yscrollcommand=scroll.set)
+        
         self.text.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
 
-        self.text.tag_configure("msg", foreground="black")
-        self.text.tag_configure("join", foreground="green")
-        self.text.tag_configure("leave", foreground="red")
-        self.text.tag_configure("status", foreground="gray")
+        # Tags for alignment and coloring
+        self.text.tag_configure("self", justify="right", foreground="blue", lmargin1=50)
+        self.text.tag_configure("other", justify="left", foreground="black", rmargin=50)
+        self.text.tag_configure("system", justify="center", foreground="gray", font=("Helvetica", 8, "italic"))
         
-        ts = datetime.datetime.now().strftime("%H:%M:%S")
-        self.text.insert("end", f"[{ts}] [Channel {channel_id}] Active\n", ("status",))
         self.poll()
+
+    def add_line(self, text: str, tags: Tuple[str]):
+        self.text.configure(state="normal")
+        self.text.insert("end", text + "\n", tags)
+        self.text.see("end")
+        self.text.configure(state="disabled")
 
     def poll(self):
         try:
             while not self.q.empty():
                 item = self.q.get()
                 kind = item[0]
-                timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-                if kind == "msg":
+                ts = datetime.datetime.now().strftime("%H:%M:%S")
+                
+                if kind == "self":
+                    _, text = item
+                    self.add_line(f"[{ts}] Me: {text}", ("self",))
+                elif kind == "other":
                     _, user, text = item
-                    self.text.insert("end", f"[{timestamp}] [{user}] {text}\n", ("msg",))
-                elif kind == "join":
-                    _, user = item
-                    self.text.insert("end", f"[{timestamp}] >> {user} joined\n", ("join",))
-                elif kind == "leave":
-                    _, user = item
-                    self.text.insert("end", f"[{timestamp}] << {user} left\n", ("leave",))
-                elif kind == "status":
+                    self.add_line(f"[{ts}] {user}: {text}", ("other",))
+                elif kind == "system":
                     _, msg = item
-                    self.text.insert("end", f"[{timestamp}] [System] {msg}\n", ("status",))
-                self.text.see("end")
+                    self.add_line(f"- {msg} -", ("system",))
         except Exception:
             pass
         finally:
@@ -78,87 +86,104 @@ class ChannelWindow:
             except:
                 pass
 
-async def handle_client(idx: int, host: str, port: int, delay: Tuple[float, float], text_len: Tuple[int, int], channel_queues: List[queue.Queue]):
-    user = f"user-{idx}"
+async def handle_client(idx: int, host: str, port: int, delay: Tuple[float, float], text_len: Tuple[int, int], q: queue.Queue):
+    user_name = f"user-{idx}"
     current_channel = -1 # 0-indexed
 
     try:
         reader, writer = await asyncio.open_connection(host, port)
     except Exception as e:
-        print(f"[{user}] Connection failed: {e}")
+        q.put(("system", f"Connection failed: {e}"))
         return
 
     # Initial join to a random channel (1-5)
-    initial_ch = random.randint(0, 4)
-    writer.write(make_join_payload(initial_ch + 1))
+    initial_ch = random.randint(1, 5)
+    writer.write(make_join_payload(initial_ch, user_name))
     await writer.drain()
     current_channel = initial_ch
-    channel_queues[current_channel].put(("join", user))
+    q.put(("system", f"Joined Channel {initial_ch}"))
 
     async def sender():
         nonlocal current_channel
         while True:
-            await asyncio.sleep(random.uniform(*delay))
+            wait_time = random.uniform(*delay)
+            await asyncio.sleep(wait_time)
             
             # 1:9 ratio for Switch : Message
             action = random.random()
             if action < 0.1: # Switch
-                new_ch = random.randint(0, 4)
+                new_ch = random.randint(1, 5)
                 if new_ch != current_channel:
-                    writer.write(make_join_payload(new_ch + 1))
+                    writer.write(make_join_payload(new_ch, user_name))
                     await writer.drain()
-                    
-                    if current_channel != -1:
-                        channel_queues[current_channel].put(("leave", user))
-                    channel_queues[new_ch].put(("join", user))
-                    
+                    q.put(("system", f"Switching to Channel {new_ch}"))
                     current_channel = new_ch
             else: # Message
                 msg = random_text(*text_len)
-                writer.write(make_msg_payload(user, msg))
+                writer.write(make_msg_payload(msg))
                 await writer.drain()
 
     async def receiver():
         while True:
             try:
                 header = await reader.readexactly(4)
-                (length,) = struct.unpack("!I", header)
+                try:
+                    length = int(header.decode(), 16)
+                except ValueError:
+                    continue
+
                 data = await reader.readexactly(length)
                 
                 try:
-                    payload = json.loads(data.decode("utf-8"))
-                    p_type = payload.get("type", "")
-                    if p_type == "message":
-                        from_user = payload.get("user_name", "?")
-                        text = payload.get("payload", {}).get("text", "")
-                        if current_channel != -1:
-                            channel_queues[current_channel].put(("msg", from_user, text))
+                    root = json.loads(data.decode("utf-8"))
+                    if isinstance(root, list):
+                        payloads = root
+                    else:
+                        payloads = [root]
+                    
+                    for payload in payloads:
+                        p_type = payload.get("type", "")
+                        
+                        if p_type == "user":
+                            from_user = payload.get("user_name", "?")
+                            text = payload.get("event", "")
+                            
+                            if from_user == user_name:
+                                q.put(("self", text))
+                            else:
+                                q.put(("other", from_user, text))
+                                
+                        elif p_type == "system":
+                            event = payload.get("event", "")
+                            target_user = payload.get("user_name", "")
+                            q.put(("system", f"{target_user} {event}"))
+                        
                 except json.JSONDecodeError:
                     pass
             except (asyncio.IncompleteReadError, ConnectionResetError):
+                q.put(("system", "Disconnected"))
                 break
-            except Exception:
+            except Exception as e:
+                q.put(("system", f"Error: {e}"))
                 break
 
     try:
         await asyncio.gather(sender(), receiver())
-    except Exception as e:
-        print(f"[{user}] Error: {e}")
+    except Exception:
+        pass
     finally:
-        if current_channel != -1:
-            channel_queues[current_channel].put(("leave", user))
         try:
             writer.close()
             await writer.wait_closed()
         except:
             pass
 
-def start_async_clients(args, channel_queues):
+def start_async_clients(args, user_queues):
     async def runner():
         tasks = []
         for i in range(args.clients):
             tasks.append(asyncio.create_task(
-                handle_client(i, args.host, args.port, (args.min_delay, args.max_delay), (args.min_len, args.max_len), channel_queues)
+                handle_client(i, args.host, args.port, (args.min_delay, args.max_delay), (args.min_len, args.max_len), user_queues[i])
             ))
         await asyncio.gather(*tasks)
     asyncio.run(runner())
@@ -167,7 +192,7 @@ def main():
     parser = argparse.ArgumentParser(description="Tk GUI for multi channel simulation")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=4800)
-    parser.add_argument("--clients", type=int, default=10, help="number of simulated clients")
+    parser.add_argument("--clients", type=int, default=5, help="number of simulated clients")
     parser.add_argument("--min-delay", type=float, default=2.0)
     parser.add_argument("--max-delay", type=float, default=4.0)
     parser.add_argument("--min-len", type=int, default=5)
@@ -177,14 +202,14 @@ def main():
     root = tk.Tk()
     root.withdraw()
 
-    channel_queues = []
+    user_queues = []
     windows = []
-    for i in range(5): # 5 Channels
+    for i in range(args.clients):
         q = queue.Queue()
-        channel_queues.append(q)
-        windows.append(ChannelWindow(root, i + 1, q))
+        user_queues.append(q)
+        windows.append(UserWindow(root, f"user-{i}", q))
 
-    t = threading.Thread(target=start_async_clients, args=(args, channel_queues), daemon=True)
+    t = threading.Thread(target=start_async_clients, args=(args, user_queues), daemon=True)
     t.start()
 
     def on_close():

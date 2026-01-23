@@ -21,7 +21,7 @@
 class ChannelServer: public ServerBase {
     public:
         struct ChannelReport {
-			const char* type;
+			enum { JOIN } type;
             fd_t from;
 			UReportDto dto;
         };
@@ -34,6 +34,7 @@ class ChannelServer: public ServerBase {
         ~ChannelServer();
         void report(const ChannelReport& req);
     protected:
+		virtual void on_recv(const fd_t from) override;
         virtual void on_req(const fd_t from, const char* target, Json& root) override;
 		void consume_report();
 	private:

@@ -24,9 +24,12 @@ ChannelServer::~ChannelServer() {
     while (!reports.empty()) {
         ChannelReport req = reports.front();
         reports.pop();
-        if (hash(req.type) == hash("join")) {
-            delete req.dto.rejoin;
-        }
+        if (req.type == ChannelReport::JOIN) {
+			if (req.dto.rejoin)
+            	delete req.dto.rejoin;
+			else if (req.dto.join)
+				delete req.dto.join;
+		}
     }
     channels.clear();
 }
@@ -38,6 +41,30 @@ void ChannelServer::report(const ChannelReport& req) {
 
 
 #pragma region PROTECTED_FUNC
+void ChannelServer::on_recv(const fd_t from) {
+	try {
+		if (!comm) return;
+		std::vector<std::string> frames = comm->recv_frame(from);
+		for (const std::string& frame : frames) {
+            json_error_t err;
+            Json root(json_loads(frame.c_str(), 0, &err));
+            if (root.get() == nullptr) {
+                iERROR("Failed to parse JSON: %s", err.text);
+                continue;
+            }
+            const char* type;
+            __UNPACK_JSON(root, "{s:s}", "type", &type) {
+                on_req(from, type, root);
+            } __UNPACK_FAIL {
+                iERROR("Malformed JSON message, missing type.");
+            }
+        }
+	} catch (const std::exception& e) {
+        iERROR("%s", e.what());
+        next_deletion.push_back(from);
+    }
+}
+
 void ChannelServer::on_req(const fd_t from, const char* target, Json& root) {
     switch (hash(target))
     {
@@ -71,10 +98,8 @@ void ChannelServer::consume_report() {
     while (!reports.empty()) {
         ChannelReport req = reports.front();
         reports.pop();
-		switch (hash(req.type)) {
-		case hash("join"):
-		case hash("Join"):
-		case hash("JOIN"):
+		switch (req.type) {
+		case ChannelReport::JOIN:
 			{
 				ch_id_t channel_id = req.dto.rejoin->channel_id;
 				// msec64 timestamp = req.dto.rejoin->timestamp;
@@ -90,12 +115,11 @@ void ChannelServer::consume_report() {
 
 #pragma region PRIVATE_FUNC
 Channel* ChannelServer::get_channel(const ch_id_t channel_id) {
-	Channel* channel;
 	if (channels.find(channel_id) == channels.end()) {
-		channel = new Channel(this);
+		Channel* channel = new Channel(this);
 		channels[channel_id] = channel;
 		LOG(_CG_ "Channel %u created." _EC_, channel_id);
 	}
-	return channel;
+	return channels[channel_id];
 }
 #pragma endregion

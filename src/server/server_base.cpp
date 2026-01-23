@@ -176,6 +176,7 @@ void ServerBase::resolve_deletion() {
 		name_map.erase(fd);
         close(fd);
 		comm->clear_buffer(fd);
+        LOG("Normally Disconnected: fd %d", fd);
     }
 }
 
