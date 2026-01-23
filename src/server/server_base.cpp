@@ -77,13 +77,13 @@ ServerBase::~ServerBase() {
 }
 
 void ServerBase::proc() {
-    try {
-        while (1) {
-    		task_runner.run();
+    while (1) {
+        try {
+            task_runner.run();
             // frame();
+        } catch(const std::exception& e) {
+            iERROR("%s", e.what());
         }
-    } catch(const std::exception& e) {
-        iERROR("%s", e.what());
     }
 }
 

@@ -13,12 +13,12 @@ Channel::~Channel() {
 }
 
 void Channel::proc() {
-    try {
-        while (!stop_flag.load(std::memory_order_relaxed)) {
+    while (!stop_flag.load(std::memory_order_relaxed)) {
+        try {
 			task_runner.run();
+        } catch (const std::exception& e) {
+            iERROR("%s", e.what());
         }
-    } catch (const std::exception& e) {
-        iERROR("%s", e.what());
     }
 }
 
@@ -94,7 +94,7 @@ void Channel::on_req(const fd_t from, const char* target, Json& root) {
 
 				leave(from);
 		
-				LOG(_CB_ "[Leave] User (fd: %d) left channel %u at %lu" _EC_, from, channel_id, timestamp);
+				LOG(_CR_ "[Leave] User (fd: %d) left channel %u at %lu" _EC_, from, channel_id, timestamp);
 
 				server->report({ChannelServer::ChannelReport::JOIN, from, dto}); // Request switch channel
 			} __UNPACK_FAIL {

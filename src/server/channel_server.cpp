@@ -75,12 +75,13 @@ void ChannelServer::on_req(const fd_t from, const char* target, Json& root) {
 			const char* user_name;
 			__UNPACK_JSON(root, "{s:I,s:I,s:s}", "channel_id", &channel_id, "timestamp", &timestamp, "user_name", &user_name) {
 				JoinReqDto req = { .channel_id = channel_id, .timestamp = timestamp, .user_name = std::string(user_name) };
+				set_user_name(from, std::string(user_name)); // user_%d -> real user_name
+
                 UJoinDto u_req;
                 u_req.join = &req;
                 get_channel(channel_id)->join_and_logging(from, u_req, false);
 
                 con_tracker->delete_client(from);
-				set_user_name(from, std::string(user_name)); // user_%d -> real user_name
             } __UNPACK_FAIL {
                 iERROR("Malformed JSON message, missing channel_id or timestamp or user_name.");
             }
