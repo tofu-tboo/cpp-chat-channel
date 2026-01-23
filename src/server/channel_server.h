@@ -10,6 +10,7 @@
 #include "../libs/json.h"
 #include "../libs/socket.h"
 #include "../libs/dto.h"
+#include "../libs/producer_consumer.h"
 
 
 /* Requirement of ChannelServer
@@ -27,7 +28,7 @@ class ChannelServer: public ServerBase {
         };
     private:
         std::unordered_map<ch_id_t, Channel*> channels;
-        std::queue<ChannelReport> reports;
+		ProducerConsumerQueue<ChannelReport> reports;
         std::mutex report_mtx;
     public:
         ChannelServer(const int max_fd = 256, const msec to = 0);

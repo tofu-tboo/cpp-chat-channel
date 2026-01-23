@@ -87,6 +87,7 @@ const int ConnectionTracker::get_evcnt() const {
     return evcnt;
 }
 
-const std::unordered_set<fd_t>& ConnectionTracker::get_clients() const {
+std::unordered_set<fd_t> ConnectionTracker::get_clients() const {
+    std::lock_guard<std::mutex> lock(mtx);
     return clients;
 }

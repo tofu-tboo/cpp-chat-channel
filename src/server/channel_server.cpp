@@ -19,11 +19,10 @@ ChannelServer::~ChannelServer() {
         delete channel;
     }
 
-    // Clean up pending reports to prevent memory leaks
-    std::lock_guard<std::mutex> lock(report_mtx);
-    while (!reports.empty()) {
-        ChannelReport req = reports.front();
-        reports.pop();
+	std::queue<ChannelReport> local_q = reports.pop_all();	
+    while (!local_q.empty()) {
+        ChannelReport req = local_q.front();
+        local_q.pop();
         if (req.type == ChannelReport::JOIN) {
 			if (req.dto.rejoin)
             	delete req.dto.rejoin;
@@ -35,7 +34,6 @@ ChannelServer::~ChannelServer() {
 }
 
 void ChannelServer::report(const ChannelReport& req) {
-    std::lock_guard<std::mutex> lock(report_mtx);
     reports.push(req);
 }
 
@@ -82,7 +80,7 @@ void ChannelServer::on_req(const fd_t from, const char* target, Json& root) {
                 get_channel(channel_id)->join_and_logging(from, u_req, false);
 
                 con_tracker->delete_client(from);
-				name_map[from] = std::string(user_name); // user_%d -> real user_name
+				set_user_name(from, std::string(user_name)); // user_%d -> real user_name
             } __UNPACK_FAIL {
                 iERROR("Malformed JSON message, missing channel_id or timestamp or user_name.");
             }
@@ -94,10 +92,10 @@ void ChannelServer::on_req(const fd_t from, const char* target, Json& root) {
 }
 
 void ChannelServer::consume_report() {
-	std::lock_guard<std::mutex> lock(report_mtx);
-    while (!reports.empty()) {
-        ChannelReport req = reports.front();
-        reports.pop();
+	std::queue<ChannelReport> local_q = reports.pop_all();	
+	while (!local_q.empty()) {
+		ChannelReport req = local_q.front();
+		local_q.pop();
 		switch (req.type) {
 		case ChannelReport::JOIN:
 			{

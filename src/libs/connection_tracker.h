@@ -34,7 +34,7 @@ class ConnectionTracker {
 
         const pollev* get_ev() const;
         const int get_evcnt() const;
-        const std::unordered_set<fd_t>& get_clients() const;
+        std::unordered_set<fd_t> get_clients() const;
 };
 
 #endif

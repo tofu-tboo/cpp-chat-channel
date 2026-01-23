@@ -15,6 +15,7 @@
 
 fd_t ServerBase::fd = -1;
 std::unordered_map<fd_t, std::string> ServerBase::name_map;
+std::mutex ServerBase::name_map_mtx;
 
 ServerBase::ServerBase(const int max_fd, const msec to): con_tracker(nullptr), comm(nullptr), timeout(to) {
     try {
@@ -87,6 +88,7 @@ void ServerBase::proc() {
 }
 
 bool ServerBase::get_user_name(const fd_t fd, std::string& out_user_name) const {
+	std::lock_guard<std::mutex> lock(name_map_mtx);
 	auto it = name_map.find(fd);
 	if (it == name_map.end()) {
 		return false;
@@ -95,13 +97,14 @@ bool ServerBase::get_user_name(const fd_t fd, std::string& out_user_name) const 
 	return true;
 }
 
-bool ServerBase::get_user_name(const fd_t fd, const char* out_user_name) const {
-	std::string user_name;
-	if (!get_user_name(fd, user_name)) {
-		return false;
-	}
-	strcpy((char*)out_user_name, user_name.c_str());
-	return true;
+void ServerBase::set_user_name(const fd_t fd, const std::string& user_name) {
+	std::lock_guard<std::mutex> lock(name_map_mtx);
+	name_map[fd] = user_name;
+}
+
+void ServerBase::remove_user_name(const fd_t fd) {
+	std::lock_guard<std::mutex> lock(name_map_mtx);
+	name_map.erase(fd);
 }
 
 #pragma region PRIVATE_FUNC
@@ -173,7 +176,7 @@ void ServerBase::resolve_deletion() {
 		} catch (...) {
 			continue;
 		}
-		name_map.erase(fd);
+		remove_user_name(fd);
         close(fd);
 		comm->clear_buffer(fd);
         LOG("Normally Disconnected: fd %d", fd);
@@ -201,7 +204,7 @@ void ServerBase::on_accept() {
         LOG("Accepted new connection: fd %d", client);
         try {
             con_tracker->add_client(client);
-			name_map[client] = "user_" + std::to_string(client); // temporary username assignment
+			set_user_name(client, "user_" + std::to_string(client)); // temporary username assignment
 		} catch (const std::exception& e) {
             iERROR("%s", e.what());
             con_tracker->delete_client(client);

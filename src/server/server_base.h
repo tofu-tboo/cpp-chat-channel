@@ -11,6 +11,7 @@
 #include <deque>
 #include <functional>
 #include <stdexcept>
+#include <mutex>
 
 #include "../libs/json.h"
 #include "../libs/socket.h"
@@ -33,6 +34,7 @@ class ServerBase {
     protected:
         static fd_t fd;
 		static std::unordered_map<fd_t, std::string> name_map; // username mapping
+		static std::mutex name_map_mtx;
     protected:
         int branch_id; // manager branch's id
         ConnectionTracker* con_tracker;
@@ -50,7 +52,8 @@ class ServerBase {
         virtual void proc(); // 외부에서의 서버 진입점
 
 		bool get_user_name(const fd_t fd, std::string& out_user_name) const;
-		bool get_user_name(const fd_t fd, const char* out_user_name) const;
+		void set_user_name(const fd_t fd, const std::string& user_name);
+		void remove_user_name(const fd_t fd);
 		
 
     private:

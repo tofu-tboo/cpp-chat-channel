@@ -7,37 +7,43 @@ ChatServer::ChatServer(const int max_fd, const msec to): ServerBase(max_fd, to) 
 	task_runner.pushb(0, [this]() {
 		cur_msgs.clear();
 	});
+    // 매 틱마다 mq를 확인하고 브로드캐스트 수행 (이벤트가 없어도 실행됨)
+    task_runner.pushb(1, [this]() {
+        resolve_timestamps();
+        resolve_broadcast();
+    });
 }
 
 ChatServer::~ChatServer() {
 	cur_msgs.clear();
-	mq.clear();
 }
 
 #pragma region PROTECTED_FUNC
 
 void ChatServer::resolve_timestamps() {
-    std::lock_guard<std::mutex> lock(mq_mtx);
-    for (const auto& [from, msg_req] : mq) {
-		MsgType type = msg_req.type;
+    std::queue<std::pair<fd_t, MessageReqDto>> local_q = mq.pop_all();
+	while (!local_q.empty()) {
+        std::pair<fd_t, MessageReqDto> item = std::move(local_q.front());
+        local_q.pop();
+
+		MsgType type = item.second.type;
 		if (type == USER) {
-        	cur_msgs.emplace(msg_req.timestamp, std::pair<fd_t, std::string>{from, msg_req.text});
+        	cur_msgs.emplace(item.second.timestamp, std::pair<fd_t, std::string>{item.first, item.second.text});
 		} else if (type == SYSTEM) {
-			cur_msgs.emplace(msg_req.timestamp, std::pair<fd_t, std::string>{ServerBase::fd, msg_req.text});
+			cur_msgs.emplace(item.second.timestamp, std::pair<fd_t, std::string>{ServerBase::fd, item.second.text});
 		}
-    }	
-    mq.clear();
+	}
 }
 
 void ChatServer::resolve_broadcast() {
     Json cur_window(json_array());
     for (const auto& [timestamp, msg] : cur_msgs) {
-		const char* user_name = nullptr;
+		std::string user_name;
 		if (!get_user_name(msg.first, user_name)) {
 			continue;
 		}
 		__ALLOC_JSON_NEW(payload, "{s:s,s:s,s:s,s:I}",
-			"type", msg.first == ServerBase::fd ? "system" : "user", "user_name", user_name, "event", msg.second.c_str(), "timestamp", timestamp) {
+			"type", msg.first == ServerBase::fd ? "system" : "user", "user_name", user_name.c_str(), "event", msg.second.c_str(), "timestamp", timestamp) {
         	json_array_append_new(cur_window.get(), payload);
 		} __ALLOC_FAIL {
 			iERROR("Failed to create broadcast JSON.");
@@ -64,10 +70,7 @@ void ChatServer::on_req(const fd_t from, const char* target, Json& root) {
 		msec64 timestamp;
 		__UNPACK_JSON(root, "{s:s,s:I}", "text", &text, "timestamp", &timestamp) {
 			MessageReqDto msg_req = { .type = USER, .text = std::string(text), .timestamp = timestamp };
-            {
-                std::lock_guard<std::mutex> lock(mq_mtx);
-			    mq.push_back({from, msg_req});
-            }
+			mq.push({from, msg_req});
 		} __UNPACK_FAIL {
 			iERROR("Malformed JSON message, missing timestamp or text.");
 			return;
@@ -102,9 +105,6 @@ void ChatServer::on_recv(const fd_t from) {
         iERROR("%s", e.what());
         next_deletion.push_back(from);
     }
-
-	resolve_timestamps();
-	resolve_broadcast();
 }
 
 #pragma endregion

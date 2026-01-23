@@ -45,7 +45,6 @@ void Channel::join_and_logging(const fd_t fd, UJoinDto req, bool re) {
 
         if (re && req.rejoin) {
             ts = req.rejoin->timestamp;
-            // Rejoin의 경우 DTO에 user_name가 없으므로 서버의 name_map에서 조회하거나 알 수 없음 처리
 			if (!get_user_name(fd, uname)) {
 				next_deletion.push_back(fd); // 이름을 알 수 없으면 강제 퇴장
 				return;
@@ -60,11 +59,7 @@ void Channel::join_and_logging(const fd_t fd, UJoinDto req, bool re) {
 
 
 		MessageReqDto sys_msg = { .type = SYSTEM, .text = event, .timestamp = ts };
-
-        {
-            std::lock_guard<std::mutex> lock(mq_mtx);
-		    mq.push_back({fd, sys_msg});
-        }
+	    mq.push({fd, sys_msg});
 
 		join(fd);
         LOG(_CB_ "[Join] User (fd: %d) joined channel %u at %lu" _EC_, fd, channel_id, ts);
@@ -95,10 +90,7 @@ void Channel::on_req(const fd_t from, const char* target, Json& root) {
 				dto.rejoin = new RejoinReqDto{ .channel_id = channel_id, .timestamp = timestamp };
 
 				MessageReqDto sys_msg = { .type = SYSTEM, .text = "leave", .timestamp = timestamp };
-                {
-                    std::lock_guard<std::mutex> lock(mq_mtx);
-				    mq.push_back({from, sys_msg});
-                }
+	    		mq.push({fd, sys_msg});
 
 				leave(from);
 		
