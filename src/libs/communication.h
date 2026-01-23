@@ -12,6 +12,7 @@
 #include "../libs/socket.h"
 #include "../libs/util.h"
 
+// TODO: consider frame exception
 class Communication {
 	private:
         std::unordered_map<fd_t, std::string> rbuf; // per-connection accumulation buffer

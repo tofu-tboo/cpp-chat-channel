@@ -19,6 +19,7 @@
 
 */
 
+// TODO: lobby timeout (5s)
 class ChannelServer: public ServerBase {
     public:
         struct ChannelReport {
