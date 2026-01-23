@@ -54,8 +54,8 @@
 //RES:
 {
 	type: "user",
-	user_name: string,
 	event: string, // message filtered and processed by server from user
+	user_name: string,
 	timestamp: int
 }
 ```

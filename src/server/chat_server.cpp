@@ -34,7 +34,12 @@ void ChatServer::resolve_payload(const fd_t from, const std::string& payload) {
 
 void ChatServer::resolve_timestamps() {
     for (const auto& [from, msg_req] : mq) {
-        cur_msgs.emplace(msg_req.timestamp, std::pair<fd_t, std::string>{from, msg_req.text});
+		MsgType type = msg_req.type;
+		if (type == USER) {
+        	cur_msgs.emplace(msg_req.timestamp, std::pair<fd_t, std::string>{from, msg_req.text});
+		} else if (type == SYSTEM) {
+			cur_msgs.emplace(msg_req.timestamp, std::pair<fd_t, std::string>{ServerBase::fd, msg_req.text});
+		}
     }	
     mq.clear();
 }
@@ -47,7 +52,7 @@ void ChatServer::resolve_broadcast() {
 			continue;
 		}
 		__ALLOC_JSON_NEW(payload, "{s:s,s:s,s:s,s:I}",
-			"type", "user", "user_name", user_name, "event", msg.second.c_str(), "timestamp", timestamp) {
+			"type", msg.first == ServerBase::fd ? "system" : "user", "user_name", user_name, "event", msg.second.c_str(), "timestamp", timestamp) {
         	json_array_append_new(cur_window.get(), payload);
 		} __ALLOC_FAIL {
 			iERROR("Failed to create broadcast JSON.");
@@ -71,7 +76,7 @@ void ChatServer::on_req(const fd_t from, const char* target, Json& root) {
 		const char* text;
 		msec64 timestamp;
 		__UNPACK_JSON(root, "{s:s,s:s,s:I}", "type", nullptr, "text", &text, "timestamp", &timestamp) {
-			MessageReqDto msg_req = { .text = std::string(text), .timestamp = timestamp };
+			MessageReqDto msg_req = { .type = USER, .text = std::string(text), .timestamp = timestamp };
 			mq.push_back({from, msg_req});
 		} __UNPACK_FAIL {
 			iERROR("Malformed JSON message, missing timestamp or text.");

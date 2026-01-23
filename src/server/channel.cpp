@@ -58,10 +58,9 @@ void Channel::join_and_logging(const fd_t fd, UJoinDto req, bool re) {
 			event = "join";
         }
 
-		
-		MessageReqDto sys_msg;
-		sys_msg.text = event;
-		sys_msg.timestamp = ts;
+
+		MessageReqDto sys_msg = { .type = SYSTEM, .text = event, .timestamp = ts };
+
 		mq.push_back({fd, sys_msg});
 
 		join(fd);
@@ -87,8 +86,12 @@ void Channel::on_req(const fd_t from, const char* target, Json& root) {
 			__UNPACK_JSON(root, "{s:I,s:I,s:s}", "channel_id", &channel_id, "timestamp", &timestamp, "user_name", nullptr) {
 				UReportDto dto;
 				dto.rejoin = new RejoinReqDto{ .channel_id = channel_id, .timestamp = timestamp };
+
+				MessageReqDto sys_msg = { .type = SYSTEM, .text = "leave", .timestamp = timestamp };
+				mq.push_back({from, sys_msg});
+
 				leave(from);
-				// TODO: push mq sys msg
+
 				server->report({"join", from, dto}); // Request switch channel
 			} __UNPACK_FAIL {
 				iERROR("Malformed JSON message, missing channel_id.");

@@ -7,8 +7,12 @@
 
 typedef unsigned int ch_id_t;
 
+enum MsgType {
+	USER,
+	SYSTEM
+};
 typedef struct {
-	// std::string type;
+	MsgType type;
 	std::string text;
 	msec64 timestamp;
 } MessageReqDto;
