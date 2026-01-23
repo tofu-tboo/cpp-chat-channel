@@ -35,14 +35,30 @@ def random_text(min_len: int, max_len: int) -> str:
     alphabet = string.ascii_letters + string.digits + " "
     return "".join(random.choice(alphabet) for _ in range(length)).strip()
 
+NAMES = [
+    "Alice", "Bob", "Charlie", "David", "Eve", "Frank", "Grace", "Heidi",
+    "Ivan", "Judy", "Mallory", "Oscar", "Peggy", "Sybil", "Trent", "Walter"
+]
+
+CHANNEL_COLORS = {
+    1: "#ffcccc", # Red
+    2: "#ffebcc", # Orange
+    3: "#ffffcc", # Yellow
+    4: "#ccffcc", # Green
+    5: "#cce5ff", # Blue
+}
+
 class UserWindow:
-    def __init__(self, root: tk.Tk, user_name: str, q: queue.Queue):
+    def __init__(self, root: tk.Tk, user_name: str, q: queue.Queue, stop_event: threading.Event):
         self.q = q
+        self.user_name = user_name
+        self.stop_event = stop_event
         self.win = tk.Toplevel(root)
         self.win.title(f"Client: {user_name}")
         self.win.geometry("400x500")
+        self.win.protocol("WM_DELETE_WINDOW", self.on_close)
         
-        self.text = tk.Text(self.win, wrap="word", state="disabled")
+        self.text = tk.Text(self.win, wrap="word", state="disabled", bg="white")
         scroll = tk.Scrollbar(self.win, command=self.text.yview)
         self.text.configure(yscrollcommand=scroll.set)
         
@@ -55,6 +71,10 @@ class UserWindow:
         self.text.tag_configure("system", justify="center", foreground="gray", font=("Helvetica", 8, "italic"))
         
         self.poll()
+
+    def on_close(self):
+        self.stop_event.set()
+        self.win.destroy()
 
     def add_line(self, text: str, tags: Tuple[str]):
         self.text.configure(state="normal")
@@ -69,25 +89,30 @@ class UserWindow:
                 kind = item[0]
                 ts = datetime.datetime.now().strftime("%H:%M:%S")
                 
-                if kind == "self":
-                    _, text = item
-                    self.add_line(f"[{ts}] Me: {text}", ("self",))
-                elif kind == "other":
+                if kind == "user":
                     _, user, text = item
-                    self.add_line(f"[{ts}] {user}: {text}", ("other",))
+                    if user == self.user_name:
+                        self.add_line(f"[{ts}] Me: {text}", ("self",))
+                    else:
+                        self.add_line(f"[{ts}] {user}: {text}", ("other",))
                 elif kind == "system":
-                    _, msg = item
-                    self.add_line(f"- {msg} -", ("system",))
+                    _, event, user, ch_id = item
+                    self.add_line(f"[{ts}] [System] {user} {event}", ("system",))
+                    
+                    if user == self.user_name and event in ["join", "rejoin"]:
+                        color = CHANNEL_COLORS.get(ch_id, "white")
+                        self.text.configure(bg=color)
         except Exception:
             pass
         finally:
             try:
-                self.win.after(100, self.poll)
+                if not self.stop_event.is_set():
+                    self.win.after(100, self.poll)
             except:
                 pass
 
-async def handle_client(idx: int, host: str, port: int, delay: Tuple[float, float], text_len: Tuple[int, int], q: queue.Queue):
-    user_name = f"user-{idx}"
+async def handle_client(idx: int, host: str, port: int, delay: Tuple[float, float], text_len: Tuple[int, int], q: queue.Queue, stop_event: threading.Event):
+    user_name = f"{NAMES[idx % len(NAMES)]}-{idx}"
     current_channel = -1 # 0-indexed
 
     try:
@@ -101,13 +126,20 @@ async def handle_client(idx: int, host: str, port: int, delay: Tuple[float, floa
     writer.write(make_join_payload(initial_ch, user_name))
     await writer.drain()
     current_channel = initial_ch
-    q.put(("system", f"Joined Channel {initial_ch}"))
 
     async def sender():
         nonlocal current_channel
-        while True:
-            wait_time = random.uniform(*delay)
-            await asyncio.sleep(wait_time)
+        while not stop_event.is_set():
+            # Responsive sleep: check stop_event frequently
+            sleep_duration = random.uniform(*delay)
+            end_time = asyncio.get_running_loop().time() + sleep_duration
+            while True:
+                now = asyncio.get_running_loop().time()
+                if now >= end_time or stop_event.is_set():
+                    break
+                await asyncio.sleep(min(0.1, end_time - now))
+            
+            if stop_event.is_set(): return
             
             # 1:9 ratio for Switch : Message
             action = random.random()
@@ -116,7 +148,6 @@ async def handle_client(idx: int, host: str, port: int, delay: Tuple[float, floa
                 if new_ch != current_channel:
                     writer.write(make_join_payload(new_ch, user_name))
                     await writer.drain()
-                    q.put(("system", f"Switching to Channel {new_ch}"))
                     current_channel = new_ch
             else: # Message
                 msg = random_text(*text_len)
@@ -147,16 +178,12 @@ async def handle_client(idx: int, host: str, port: int, delay: Tuple[float, floa
                         if p_type == "user":
                             from_user = payload.get("user_name", "?")
                             text = payload.get("event", "")
-                            
-                            if from_user == user_name:
-                                q.put(("self", text))
-                            else:
-                                q.put(("other", from_user, text))
+                            q.put(("user", from_user, text))
                                 
                         elif p_type == "system":
                             event = payload.get("event", "")
                             target_user = payload.get("user_name", "")
-                            q.put(("system", f"{target_user} {event}"))
+                            q.put(("system", event, target_user, current_channel))
                         
                 except json.JSONDecodeError:
                     pass
@@ -167,23 +194,34 @@ async def handle_client(idx: int, host: str, port: int, delay: Tuple[float, floa
                 q.put(("system", f"Error: {e}"))
                 break
 
-    try:
-        await asyncio.gather(sender(), receiver())
-    except Exception:
-        pass
-    finally:
+    sender_task = asyncio.create_task(sender())
+    receiver_task = asyncio.create_task(receiver())
+
+    # Wait until either sender finishes (window closed) or receiver finishes (connection lost)
+    done, pending = await asyncio.wait(
+        [sender_task, receiver_task],
+        return_when=asyncio.FIRST_COMPLETED
+    )
+
+    for task in pending:
+        task.cancel()
         try:
-            writer.close()
-            await writer.wait_closed()
-        except:
+            await task
+        except asyncio.CancelledError:
             pass
 
-def start_async_clients(args, user_queues):
+    try:
+        writer.close()
+        await writer.wait_closed()
+    except:
+        pass
+
+def start_async_clients(args, user_queues, stop_events):
     async def runner():
         tasks = []
         for i in range(args.clients):
             tasks.append(asyncio.create_task(
-                handle_client(i, args.host, args.port, (args.min_delay, args.max_delay), (args.min_len, args.max_len), user_queues[i])
+                handle_client(i, args.host, args.port, (args.min_delay, args.max_delay), (args.min_len, args.max_len), user_queues[i], stop_events[i])
             ))
         await asyncio.gather(*tasks)
     asyncio.run(runner())
@@ -203,13 +241,16 @@ def main():
     root.withdraw()
 
     user_queues = []
+    stop_events = []
     windows = []
     for i in range(args.clients):
         q = queue.Queue()
+        stop = threading.Event()
         user_queues.append(q)
-        windows.append(UserWindow(root, f"user-{i}", q))
+        stop_events.append(stop)
+        windows.append(UserWindow(root, f"{NAMES[i % len(NAMES)]}-{i}", q, stop))
 
-    t = threading.Thread(target=start_async_clients, args=(args, user_queues), daemon=True)
+    t = threading.Thread(target=start_async_clients, args=(args, user_queues, stop_events), daemon=True)
     t.start()
 
     def on_close():

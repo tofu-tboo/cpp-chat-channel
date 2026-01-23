@@ -17,7 +17,7 @@ std::vector<std::string> Communication::recv_frame(const fd_t fd) {
     if (n < 0) {
         throw std::runtime_error("Minus frame.");
     } else if (n == 0) {
-		throw std::runtime_error("Disconnected.");
+		throw runtime_errorf("Disconnected: fd %d", fd);
 	}
 
 	std::vector<std::string> frames;
@@ -59,14 +59,14 @@ void Communication::send_frame(const fd_t fd, const std::string& payload) {
     char header[5];
     std::snprintf(header, sizeof(header), "%04x", len);
 
-    ssize_t sent = send(fd, header, 4, 0);
+    ssize_t sent = send(fd, header, 4, MSG_NOSIGNAL); // MSG_NOSIGNAL => prevent SIGPIPE abort
     if (sent != 4) {
         throw std::runtime_error("Invalid header sent.");
     }
 
     size_t total = 0;
     while (total < payload.size()) {
-        ssize_t n = send(fd, payload.data() + total, payload.size() - total, 0);
+        ssize_t n = send(fd, payload.data() + total, payload.size() - total, MSG_NOSIGNAL);
         if (n <= 0) {
             throw std::runtime_error("Minus frame.");
         }

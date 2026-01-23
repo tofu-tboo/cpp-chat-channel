@@ -8,7 +8,7 @@ ChatServer::ChatServer(const int max_fd, const msec to): ServerBase(max_fd, to) 
 		cur_msgs.clear();
 	});
     // 매 틱마다 mq를 확인하고 브로드캐스트 수행 (이벤트가 없어도 실행됨)
-    task_runner.pushb(1, [this]() {
+    task_runner.pushf(2, [this]() {
         resolve_timestamps();
         resolve_broadcast();
     });
@@ -26,24 +26,31 @@ void ChatServer::resolve_timestamps() {
         std::pair<fd_t, MessageReqDto> item = std::move(local_q.front());
         local_q.pop();
 
-		MsgType type = item.second.type;
-		if (type == USER) {
-        	cur_msgs.emplace(item.second.timestamp, std::pair<fd_t, std::string>{item.first, item.second.text});
-		} else if (type == SYSTEM) {
-			cur_msgs.emplace(item.second.timestamp, std::pair<fd_t, std::string>{ServerBase::fd, item.second.text});
-		}
+		cur_msgs.emplace(item.second.timestamp, std::pair<fd_t, MessageReqDto>(item.first, item.second));
 	}
 }
 
 void ChatServer::resolve_broadcast() {
     Json cur_window(json_array());
-    for (const auto& [timestamp, msg] : cur_msgs) {
+    for (const auto& [timestamp, req] : cur_msgs) {
 		std::string user_name;
-		if (!get_user_name(msg.first, user_name)) {
+		std::string type;
+		if (!get_user_name(req.first, user_name)) {
 			continue;
 		}
+		switch (req.second.type)
+		{
+		case USER:
+			type = "user";
+			break;
+		case SYSTEM:
+			type = "system";
+			break;
+		default:
+			break;
+		}
 		__ALLOC_JSON_NEW(payload, "{s:s,s:s,s:s,s:I}",
-			"type", msg.first == ServerBase::fd ? "system" : "user", "user_name", user_name.c_str(), "event", msg.second.c_str(), "timestamp", timestamp) {
+			"type", type.c_str(), "user_name", user_name.c_str(), "event", req.second.text.c_str(), "timestamp", timestamp) {
         	json_array_append_new(cur_window.get(), payload);
 		} __ALLOC_FAIL {
 			iERROR("Failed to create broadcast JSON.");
