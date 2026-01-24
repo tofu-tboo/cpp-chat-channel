@@ -111,33 +111,44 @@ void ChannelServer::on_req(const fd_t from, const char* target, Json& root) {
 			__UNPACK_JSON(root, "{s:I,s:I,s:s}", "channel_id", &channel_id, "timestamp", &timestamp, "user_name", &user_name) {
 				set_user_name(from, std::string(user_name)); // user_%d -> real user_name
 
-				// TODO
-				get_channel(channel_id)->wait_stop_pooling();
-				if (!get_channel(channel_id)->ping_pool()) {
-					get_channel(channel_id)->start_pooling();
+				Channel* target_ch = get_channel(channel_id);
+				target_ch->wait_stop_pooling();
 
-					std::vector<ch_id_t> candidates;
-					for (auto& [id, ch] : channels) {
+				if (!target_ch->ping_pool()) {
+					target_ch->start_pooling(); // Unlock full channel
+					target_ch = nullptr;
+
+					// Try to find an available channel
+					std::vector<ch_id_t> ids;
+					for(auto& [id, _] : channels) ids.push_back(id);
+					
+					for (ch_id_t id : ids) {
 						if (id == channel_id) continue;
-						if (ch->ping_pool()) {
-							candidates.push_back(id);
+						Channel* candidate = get_channel(id);
+						candidate->wait_stop_pooling();
+						if (candidate->ping_pool()) {
+							target_ch = candidate;
+							break;
 						}
+						candidate->start_pooling();
 					}
 
-					if (!candidates.empty()) {
-						channel_id = candidates[rand() % candidates.size()];
-					} else {
-						channel_id = 1;
-						while (channels.find(channel_id) != channels.end()) channel_id++;
+					if (!target_ch) {
+						// Create new channel
+						ch_id_t new_id = 1;
+						while (channels.find(new_id) != channels.end()) new_id++;
+						target_ch = get_channel(new_id);
+						target_ch->wait_stop_pooling();
 					}
 				}
-				get_channel(channel_id)->start_pooling();
 
-                get_channel(channel_id)->join_and_logging(from, timestamp, false);
+				// target_ch is locked here
+				target_ch->join_and_logging(from, timestamp, false);
 
-                con_tracker->delete_client(from);
-
+				con_tracker->delete_client(from);
 				last_act.erase(from);
+
+				target_ch->start_pooling();
             } __UNPACK_FAIL {
                 iERROR("Malformed JSON message, missing channel_id or timestamp or user_name.");
             }

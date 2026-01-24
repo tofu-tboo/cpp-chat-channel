@@ -95,27 +95,23 @@ static int get_term_width() {
     return w.ws_col;
 }
 
-static void refresh_line() {
-    std::cout << "\r\033[K" << "> " << g_input_buffer << std::flush;
+static void gotoxy(int x, int y) {
+    std::cout << "\033[" << y << ";" << x << "H" << std::flush;
 }
 
-static void display_message(const std::string& payload) {
-    json_error_t err;
-    json_t* obj = json_loadb(payload.data(), payload.size(), 0, &err);
-    if (!obj || !json_is_object(obj)) {
-        if (obj) json_decref(obj);
-        return;
-    }
+static void cls() {
+    std::cout << "\033[2J\033[1;1H" << std::flush;
+}
 
+static void refresh_line() {
+    std::cout << "\r\033[K" << _EC_ << "> " << g_input_buffer << std::flush;
+}
+
+static void print_line(json_t* obj) {
     const char* type = json_string_value(json_object_get(obj, "type"));
-    if (!type) {
-        json_decref(obj);
-        return;
-    }
+    if (!type) return;
 
     int width = get_term_width();
-    std::cout << "\r\033[K"; // Clear input line
-
     if (strcmp(type, "system") == 0) {
         const char* event = json_string_value(json_object_get(obj, "event"));
         const char* user = json_string_value(json_object_get(obj, "user_name"));
@@ -146,6 +142,26 @@ static void display_message(const std::string& payload) {
             if (pad < 0) pad = 0;
             std::cout << std::string(pad, ' ') << _CR_ << msg << _EC_ << "\r\n";
         }
+    }
+}
+
+static void display_message(const std::string& payload) {
+    json_error_t err;
+    json_t* obj = json_loadb(payload.data(), payload.size(), 0, &err);
+    if (!obj) return;
+
+    std::cout << "\r\033[K"; // Clear input line
+
+    if (json_is_array(obj)) {
+        size_t index;
+        json_t *value;
+        json_array_foreach(obj, index, value) {
+            if (json_is_object(value)) {
+                print_line(value);
+            }
+        }
+    } else if (json_is_object(obj)) {
+        print_line(obj);
     }
 
     json_decref(obj);
@@ -206,6 +222,7 @@ int main(int argc, char* argv[]) {
     json_decref(join_obj);
 
     enableRawMode();
+    cls();
     refresh_line();
 
     struct pollfd fds[2];
@@ -228,16 +245,34 @@ int main(int argc, char* argv[]) {
             if (read(STDIN_FILENO, &c, 1) == 1) {
                 if (c == '\n' || c == '\r') {
                     if (!g_input_buffer.empty()) {
-                        json_t* msg_obj = json_pack("{s:s, s:s, s:I}", "type", "message", "text", g_input_buffer.c_str(), "timestamp", (json_int_t)now_ms());
-                        char* msg_dump = json_dumps(msg_obj, JSON_COMPACT);
-                        send_frame(fd, std::string(msg_dump));
-                        free(msg_dump);
-                        json_decref(msg_obj);
+                        if (g_input_buffer.rfind("/join ", 0) == 0) {
+                            try {
+                                std::string ch_id_str = g_input_buffer.substr(6);
+                                int channel_id = std::stoi(ch_id_str);
+                                
+                                json_t* join_obj = json_pack("{s:s, s:I, s:I}", 
+                                    "type", "join", 
+                                    "channel_id", (json_int_t)channel_id, 
+                                    "timestamp", (json_int_t)now_ms());
+                                char* join_dump = json_dumps(join_obj, JSON_COMPACT);
+                                send_frame(fd, std::string(join_dump));
+                                free(join_dump);
+                                json_decref(join_obj);
+                            } catch (const std::exception&) {
+                                // Invalid command, do nothing
+                            }
+                        } else {
+                            json_t* msg_obj = json_pack("{s:s, s:s, s:I}", "type", "message", "text", g_input_buffer.c_str(), "timestamp", (json_int_t)now_ms());
+                            char* msg_dump = json_dumps(msg_obj, JSON_COMPACT);
+                            send_frame(fd, std::string(msg_dump));
+                            free(msg_dump);
+                            json_decref(msg_obj);
+                        }
                         g_input_buffer.clear();
                     }
-                } else if (c == 127 || c == '\b') {
+                } else if (c == 127 || c == '\b') { // Backspace
                     if (!g_input_buffer.empty()) g_input_buffer.pop_back();
-                } else {
+                } else if (c >= 32 && c <= 126) { // Printable ASCII
                     g_input_buffer += c;
                 }
                 refresh_line();

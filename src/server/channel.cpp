@@ -53,7 +53,6 @@ void Channel::join_and_logging(const fd_t fd, msec64 timestamp, bool re) {
 		MessageReqDto sys_msg = { .type = SYSTEM, .timestamp = timestamp};
 
 		if (!get_user_name(fd, sys_msg.user_name)) {
-			next_deletion.insert(fd); // 이름을 알 수 없으면 강제 퇴장
 			return;
 		}
 
@@ -84,8 +83,19 @@ void Channel::on_accept() {} // accept only occured in lobby(ChannelServer)
 void Channel::resolve_deletion() {
 	if (!con_tracker) return;
     for (const fd_t fd : next_deletion) {
-		leave_and_logging(fd, std::chrono::duration_cast<std::chrono::milliseconds>(
-		std::chrono::system_clock::now().time_since_epoch()).count());
+		msec64 timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+		
+		MessageReqDto sys_msg = { .type = SYSTEM, .text = "leave", .timestamp = timestamp };
+		if (!get_user_name(fd, sys_msg.user_name)) {
+			sys_msg.user_name = "unknown";
+		}
+
+		mq.push({fd, sys_msg});
+
+		try {
+			con_tracker->delete_client(fd);
+		} catch (...) {}
+
 		remove_user_name(fd);
         close(fd);
 		comm->clear_buffer(fd);
@@ -132,8 +142,10 @@ void Channel::on_req(const fd_t from, const char* target, Json& root) {
 			ch_id_t ch_to;
 			msec64 timestamp;
 			__UNPACK_JSON(root, "{s:I,s:I}", "channel_id", &ch_to, "timestamp", &timestamp) {
+				if (ch_to == channel_id) return;
+				
 				UReportDto dto;
-				dto.join = new JoinReqDto{ .ch_from = ch_to, .ch_to = channel_id, .timestamp = timestamp };
+				dto.join = new JoinReqDto{ .ch_from = channel_id, .ch_to = ch_to, .timestamp = timestamp };
 
 				server->report({ChannelServer::ChannelReport::JOIN, from, dto});
 			} __UNPACK_FAIL {
