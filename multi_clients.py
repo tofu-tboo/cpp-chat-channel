@@ -102,6 +102,9 @@ class UserWindow:
                     if user == self.user_name and event in ["join", "rejoin"]:
                         color = CHANNEL_COLORS.get(ch_id, "white")
                         self.text.configure(bg=color)
+                elif kind == "error":
+                    _, event = item
+                    self.add_line(f"[{ts}] [System] {event}", ("system",))
         except Exception:
             pass
         finally:
@@ -184,6 +187,10 @@ async def handle_client(idx: int, host: str, port: int, delay: Tuple[float, floa
                             event = payload.get("event", "")
                             target_user = payload.get("user_name", "")
                             q.put(("system", event, target_user, current_channel))
+
+                        elif p_type == "error":
+                            message = payload.get("message", "Unknown error")
+                            q.put(("error", f"Error from server: {message}"))
                         
                 except json.JSONDecodeError:
                     pass

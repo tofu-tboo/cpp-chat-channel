@@ -188,20 +188,26 @@ void ServerBase::on_accept() {
     if (client == FD_ERR) {
         iERROR("Failed to accept new connection.");
     } else {
-        LOG("Accepted new connection: fd %d", client);
         try {
             con_tracker->add_client(client);
 			set_user_name(client, "user_" + std::to_string(client)); // temporary username assignment
 		} catch (const std::exception& e) {
+			if (dynamic_cast<const coded_runtime_error*>(&e) != nullptr) {
+				const coded_runtime_error& cre = static_cast<const coded_runtime_error&>(e);
+				if (cre.code == POOL_FULL) {
+					comm->send_frame(client, std::string(R"({"type":"error","message":"Server is full."})"));
+				}
+			}
             iERROR("%s", e.what());
-            con_tracker->delete_client(client);
-            close(client);
+            next_deletion.insert(client);
+			return;
         }
+        LOG("Accepted new connection: fd %d", client);
     }
 }
 
 void ServerBase::on_disconnect(const fd_t fd) {
-	next_deletion.push_back(fd);
+	next_deletion.insert(fd);
 }
 
 void ServerBase::on_recv(const fd_t from) {
@@ -210,7 +216,7 @@ void ServerBase::on_recv(const fd_t from) {
 		std::vector<std::string> frames = comm->recv_frame(from);
     } catch (const std::exception& e) {
         iERROR("%s", e.what());
-        next_deletion.push_back(from);
+        next_deletion.insert(from);
     }
 }
 

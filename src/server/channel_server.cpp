@@ -7,7 +7,7 @@
 #include "channel_server.h"
 #include "../libs/util.h"
 
-ChannelServer::ChannelServer(const int max_fd, const msec to): ServerBase(max_fd, to) {
+ChannelServer::ChannelServer(const int max_fd, const int ch_max_fd, const msec to): ServerBase(max_fd, to), ch_max_fd(ch_max_fd) {
     // Periodically process switch requests from channels
     task_runner.pushb(0, [this]() {
         consume_report();
@@ -37,6 +37,14 @@ ChannelServer::~ChannelServer() {
 }
 
 void ChannelServer::report(const ChannelReport& req) {
+	switch (req.type) {
+	case ChannelReport::JOIN:
+		if (!get_channel(req.dto.rejoin->channel_id)->ping_pool()) {
+			iERROR("Channel %u is full.", req.dto.rejoin->channel_id);
+			throw runtime_errorf(POOL_FULL);
+		}
+		break;
+	}
     reports.push(req);
 }
 
@@ -48,17 +56,23 @@ void ChannelServer::on_accept() {
     if (client == FD_ERR) {
         iERROR("Failed to accept new connection.");
     } else {
-        LOG("Accepted new connection: fd %d", client);
         try {
             con_tracker->add_client(client);
 			set_user_name(client, "user_" + std::to_string(client)); // temporary username assignment
 
-			last_act[client] = clock();
+			last_act[client] = std::chrono::steady_clock::now();
 		} catch (const std::exception& e) {
+			if (dynamic_cast<const coded_runtime_error*>(&e) != nullptr) {
+				const coded_runtime_error& cre = static_cast<const coded_runtime_error&>(e);
+				if (cre.code == POOL_FULL) {
+					comm->send_frame(client, std::string(R"({"type":"error","message":"Server is full."})"));
+				}
+			}
             iERROR("%s", e.what());
-            con_tracker->delete_client(client);
-            close(client);
+            next_deletion.insert(client);
+			return;
         }
+        LOG("Accepted new connection: fd %d", client);
     }
 }
 
@@ -82,7 +96,7 @@ void ChannelServer::on_recv(const fd_t from) {
         }
 	} catch (const std::exception& e) {
         iERROR("%s", e.what());
-        next_deletion.push_back(from);
+        next_deletion.insert(from);
     }
 }
 
@@ -103,6 +117,8 @@ void ChannelServer::on_req(const fd_t from, const char* target, Json& root) {
                 get_channel(channel_id)->join_and_logging(from, timestamp, false);
 
                 con_tracker->delete_client(from);
+
+				last_act.erase(from);
             } __UNPACK_FAIL {
                 iERROR("Malformed JSON message, missing channel_id or timestamp or user_name.");
             }
@@ -135,7 +151,7 @@ void ChannelServer::consume_report() {
 #pragma region PRIVATE_FUNC
 Channel* ChannelServer::get_channel(const ch_id_t channel_id) {
 	if (channels.find(channel_id) == channels.end()) {
-		Channel* channel = new Channel(this);
+		Channel* channel = new Channel(this, channel_id, ch_max_fd);
 		channels[channel_id] = channel;
 		LOG(_CG_ "Channel %u created." _EC_, channel_id);
 	}
@@ -143,15 +159,15 @@ Channel* ChannelServer::get_channel(const ch_id_t channel_id) {
 }
 
 void ChannelServer::check_lobby() {
-	clock_t now = clock();
-	std::unordered_map<fd_t, clock_t> next;
+	auto now = std::chrono::steady_clock::now();
+	std::unordered_map<fd_t, std::chrono::steady_clock::time_point> next;
 	for (const auto& [fd, t] : last_act) {
-		double elapsed_secs = now - t;
-		if (elapsed_secs < 5000) {
+		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - t).count();
+		if (elapsed < 5000) {
 			next[fd] = t;
 		} else {
 			LOG("Lobby timeout: fd %d", fd);
-			next_deletion.push_back(fd);
+			next_deletion.insert(fd);
 		}
 	}
 	last_act = std::move(next);

@@ -4,7 +4,6 @@
 #include <unordered_map>
 #include <queue>
 #include <mutex>
-#include <ctime>
 
 #include "chat_server.h"
 #include "channel.h"
@@ -31,9 +30,11 @@ class ChannelServer: public ServerBase {
         std::unordered_map<ch_id_t, Channel*> channels;
 		ProducerConsumerQueue<ChannelReport> reports;
         std::mutex report_mtx;
-		std::unordered_map<fd_t, clock_t> last_act;
+		std::unordered_map<fd_t, std::chrono::steady_clock::time_point> last_act;
+
+		int ch_max_fd;
     public:
-        ChannelServer(const int max_fd = 256, const msec to = 0);
+        ChannelServer(const int max_fd = 256, const int ch_max_fd = 32, const msec to = 0);
         ~ChannelServer();
         void report(const ChannelReport& req);
     protected:

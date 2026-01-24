@@ -49,6 +49,18 @@ inline constexpr unsigned int hash(const char* str) {
     return str && str[0] ? static_cast<unsigned int>(str[0]) + 0xEDB8832Full * hash(str + 1) : 8603;
 }
 
+inline std::runtime_error runtime_errorf(const char* s) {
+    return std::runtime_error(s);
+}
+
+inline coded_runtime_error runtime_errorf(int code, const char* s) {
+    return coded_runtime_error(code, s);
+}
+
+inline coded_runtime_error runtime_errorf(int code) {
+	return coded_runtime_error(code, "");
+}
+
 template <typename... Args>
 std::runtime_error runtime_errorf(const char* fmt, Args&&... args) {
     char buf[256];

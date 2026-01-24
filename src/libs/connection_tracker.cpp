@@ -51,7 +51,7 @@ void ConnectionTracker::add_client(const int fd) {
     } else if (fd == listener_fd) {
         throw std::runtime_error("Listening socket cannot be re-added as a client.");
     } else if (clients.size() >= max_fd) {
-        throw std::runtime_error("Pool full.");
+        throw runtime_errorf(POOL_FULL, "Pool full.");
     }
 
     pollev ev{};
@@ -90,4 +90,9 @@ const int ConnectionTracker::get_evcnt() const {
 std::unordered_set<fd_t> ConnectionTracker::get_clients() const {
     std::lock_guard<std::mutex> lock(mtx);
     return clients;
+}
+
+bool ConnectionTracker::is_full() const {
+	std::lock_guard<std::mutex> lock(mtx);
+	return clients.size() >= max_fd;
 }

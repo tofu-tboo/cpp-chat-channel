@@ -15,6 +15,7 @@ typedef struct {
 	MsgType type;
 	std::string text;
 	msec64 timestamp;
+	std::string user_name;
 } MessageReqDto;
 
 typedef struct {

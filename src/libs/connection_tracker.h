@@ -1,7 +1,8 @@
 #ifndef __CONNECTION_TRACKER_H__
 #define __CONNECTION_TRACKER_H__
 
-#define MAX_PEV         1024
+#define MAX_PEV        1024
+#define POOL_FULL      601
 
 #include <unordered_set>
 #include <unistd.h>
@@ -35,6 +36,7 @@ class ConnectionTracker {
         const pollev* get_ev() const;
         const int get_evcnt() const;
         std::unordered_set<fd_t> get_clients() const;
+		bool is_full() const;
 };
 
 #endif

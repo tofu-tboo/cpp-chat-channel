@@ -59,3 +59,12 @@
 	timestamp: int
 }
 ```
+
+- 에러
+
+```
+{
+	type: "error",
+	message: string // server/channel full, etc.
+}
+```

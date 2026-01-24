@@ -7,7 +7,6 @@
 #include <unordered_set>
 #include <map>
 #include <string>
-#include <vector>
 #include <deque>
 #include <functional>
 #include <stdexcept>
@@ -54,7 +53,7 @@ class ServerBase {
 
         msec timeout;
 
-        std::vector<fd_t> next_deletion;
+        std::unordered_set<fd_t> next_deletion;
 
         TaskRunner<void()> task_runner;
     public:

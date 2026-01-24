@@ -25,7 +25,7 @@ class Channel: public ChatServer {
         std::atomic<bool> stop_flag{false};
         ChannelServer* server; // upward link
     public:
-        Channel(ChannelServer* srv);
+        Channel(ChannelServer* srv, ch_id_t id, const int max_fd = 256);
         ~Channel();
 
         virtual void proc() override;
@@ -36,9 +36,12 @@ class Channel: public ChatServer {
 		void leave_and_logging(const fd_t fd, msec64 timestamp);
 		void join_and_logging(const fd_t fd, msec64 timestamp, bool re = true);
 
+		bool ping_pool();
+
     protected: // Sequencially called in proc() => no needed mutex
+		virtual void resolve_deletion() override;
+
         virtual void on_accept() override;
-		virtual void on_disconnect(const fd_t fd) override;
         virtual void on_req(const fd_t from, const char* target, Json& root) override;
 		virtual void on_recv(const fd_t from) override;
 };

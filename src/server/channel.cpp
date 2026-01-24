@@ -1,7 +1,7 @@
 #include "channel.h"
 #include "channel_server.h"
 
-Channel::Channel(ChannelServer* srv): ChatServer(256, 100), server(srv) {
+Channel::Channel(ChannelServer* srv, ch_id_t id, const int max_fd): ChatServer(max_fd, 100), channel_id(id), server(srv) {
     stop_flag.store(false);
     worker = std::thread(&Channel::proc, this);
 }
@@ -29,6 +29,7 @@ void Channel::leave(const fd_t fd) {
         iERROR("%s", e.what());
     }
 }
+
 void Channel::join(const fd_t fd) {
     try {
         con_tracker->add_client(fd);
@@ -41,11 +42,11 @@ void Channel::leave_and_logging(const fd_t fd, msec64 timestamp) {
 	try {		
 		std::string user_name;
 		if (!get_user_name(fd, user_name)) {
-			next_deletion.push_back(fd); // 이름을 알 수 없으면 강제 퇴장
+			next_deletion.insert(fd); // 이름을 알 수 없으면 강제 퇴장
 			return;
 		}
 
-		MessageReqDto sys_msg = { .type = SYSTEM, .text = "leave", .timestamp = timestamp };
+		MessageReqDto sys_msg = { .type = SYSTEM, .text = "leave", .timestamp = timestamp, .user_name = user_name };
 	    mq.push({fd, sys_msg});
 
 		leave(fd);
@@ -61,13 +62,13 @@ void Channel::join_and_logging(const fd_t fd, msec64 timestamp, bool re) {
 		std::string event;
 
 		if (!get_user_name(fd, uname)) {
-			next_deletion.push_back(fd); // 이름을 알 수 없으면 강제 퇴장
+			next_deletion.insert(fd); // 이름을 알 수 없으면 강제 퇴장
 			return;
 		}
 
 		event = re ? "rejoin" : "join";
 
-		MessageReqDto sys_msg = { .type = SYSTEM, .text = event, .timestamp = timestamp };
+		MessageReqDto sys_msg = { .type = SYSTEM, .text = event, .timestamp = timestamp, .user_name = uname };
 	    mq.push({fd, sys_msg});
 
 		join(fd);
@@ -77,15 +78,25 @@ void Channel::join_and_logging(const fd_t fd, msec64 timestamp, bool re) {
     }
 }
 
+bool Channel::ping_pool() {
+	return !con_tracker->is_full();
+}
+
 #pragma region PROTECTED_FUNC
 
 void Channel::on_accept() {} // accept only occured in lobby(ChannelServer)
-void Channel::on_disconnect(const fd_t fd) {
-	msec64 timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-		std::chrono::system_clock::now().time_since_epoch()).count();
-	leave_and_logging(fd, timestamp);
-	next_deletion.push_back(fd);
+void Channel::resolve_deletion() {
+	if (!con_tracker) return;
+    for (const fd_t fd : next_deletion) {
+		leave_and_logging(fd, std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::system_clock::now().time_since_epoch()).count());
+		remove_user_name(fd);
+        close(fd);
+		comm->clear_buffer(fd);
+        LOG("Normally Disconnected: fd %d", fd);
+    }
 }
+
 void Channel::on_req(const fd_t from, const char* target, Json& root) {
     switch (hash(target)) {
     case hash("message"):
@@ -103,9 +114,17 @@ void Channel::on_req(const fd_t from, const char* target, Json& root) {
 				UReportDto dto;
 				dto.rejoin = new RejoinReqDto{ .channel_id = channel_id, .timestamp = timestamp };
 
-				leave_and_logging(from, timestamp);
-
-				server->report({ChannelServer::ChannelReport::JOIN, from, dto}); // Request switch channel
+				try {
+					server->report({ChannelServer::ChannelReport::JOIN, from, dto});
+					leave_and_logging(from, timestamp);
+				} catch (const std::exception& e) {
+					if (dynamic_cast<const coded_runtime_error*>(&e) != nullptr) {
+						const coded_runtime_error& cre = static_cast<const coded_runtime_error&>(e);
+						if (cre.code == POOL_FULL) {
+							comm->send_frame(from, std::string(R"({"type":"error","message":"The channel is full."})"));
+						}
+					}
+				}
 			} __UNPACK_FAIL {
 				iERROR("Malformed JSON message, missing channel_id.");
 			}
@@ -136,14 +155,7 @@ void Channel::on_recv(const fd_t from) {
 		}
 	} catch (const std::exception& e) {
 		iERROR("%s", e.what());
-		if (dynamic_cast<const coded_runtime_error*>(&e) != nullptr) {
-			const coded_runtime_error& cre = static_cast<const coded_runtime_error&>(e);
-			if (cre.code == DISCONNECTED_BY_FIN) {
-				on_disconnect(from);
-				return;
-			}
-		}
-        next_deletion.push_back(from);
+        next_deletion.insert(from);
     }
 }
 
