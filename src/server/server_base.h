@@ -11,6 +11,7 @@
 #include <functional>
 #include <stdexcept>
 #include <mutex>
+#include <shared_mutex>
 #include <cstring>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -45,7 +46,11 @@ class ServerBase {
     protected:
         static fd_t fd;
 		static std::unordered_map<fd_t, std::string> name_map; // username mapping
-		static std::mutex name_map_mtx;
+		static std::shared_mutex name_map_mtx;
+
+		static bool get_user_name(const fd_t fd, std::string& out_user_name);
+		static void set_user_name(const fd_t fd, const std::string& user_name);
+		static void remove_user_name(const fd_t fd);
     protected:
         int branch_id; // manager branch's id
         ConnectionTracker* con_tracker;
@@ -61,10 +66,6 @@ class ServerBase {
         ~ServerBase();
 
         virtual void proc(); // 외부에서의 서버 진입점
-
-		bool get_user_name(const fd_t fd, std::string& out_user_name) const;
-		void set_user_name(const fd_t fd, const std::string& user_name);
-		void remove_user_name(const fd_t fd);
 		
 
     private:

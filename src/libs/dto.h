@@ -36,9 +36,14 @@ typedef union {
 	RejoinReqDto* rejoin;
 } UJoinDto;
 
+typedef struct {
+	ch_id_t channel_id;
+	msec64 timestamp;
+} JoinBlockReqDto;
 typedef union {
 	JoinReqDto* join;
 	RejoinReqDto* rejoin;
+	JoinBlockReqDto* join_block;
 	// etc...
 } UReportDto;
 #endif

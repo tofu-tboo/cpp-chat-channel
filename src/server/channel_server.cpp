@@ -111,8 +111,26 @@ void ChannelServer::on_req(const fd_t from, const char* target, Json& root) {
 			msec64 timestamp;
 			const char* user_name;
 			__UNPACK_JSON(root, "{s:I,s:I,s:s}", "channel_id", &channel_id, "timestamp", &timestamp, "user_name", &user_name) {
-				JoinReqDto req = { .channel_id = channel_id, .timestamp = timestamp, .user_name = std::string(user_name) };
 				set_user_name(from, std::string(user_name)); // user_%d -> real user_name
+
+				if (!get_channel(channel_id)->ping_pool()) {
+					std::vector<ch_id_t> candidates;
+					for (auto& [id, ch] : channels) {
+						if (id == channel_id) continue;
+						if (ch->ping_pool()) {
+							candidates.push_back(id);
+						}
+					}
+
+					if (!candidates.empty()) {
+						channel_id = candidates[rand() % candidates.size()];
+					} else {
+						channel_id = 1;
+						while (channels.find(channel_id) != channels.end()) channel_id++;
+					}
+				}
+
+				JoinReqDto req = { .channel_id = channel_id, .timestamp = timestamp, .user_name = std::string(user_name) };
 
                 get_channel(channel_id)->join_and_logging(from, timestamp, false);
 
@@ -141,6 +159,31 @@ void ChannelServer::consume_report() {
 				msec64 timestamp = req.dto.rejoin->timestamp;
 				get_channel(channel_id)->join_and_logging(req.from, timestamp, true);
                 delete req.dto.rejoin; // Consumer takes responsibility for deletion
+			}
+			break;
+		case ChannelReport::JOIN_BLOCK:
+			{
+				// ch_id_t failed_id = req.dto.join_block->channel_id;
+				// msec64 timestamp = req.dto.join_block->timestamp;
+
+				// std::vector<ch_id_t> candidates;
+				// for (auto& [id, ch] : channels) {
+				// 	if (id == failed_id) continue;
+				// 	if (ch->ping_pool()) {
+				// 		candidates.push_back(id);
+				// 	}
+				// }
+
+				// ch_id_t next_id;
+				// if (!candidates.empty()) {
+				// 	next_id = candidates[rand() % candidates.size()];
+				// } else {
+				// 	next_id = 1;
+				// 	while (channels.find(next_id) != channels.end()) next_id++;
+				// }
+
+				// get_channel(next_id)->join_and_logging(req.from, timestamp, true);
+                // delete req.dto.join_block; // Consumer takes responsibility for deletion
 			}
 			break;
 		}

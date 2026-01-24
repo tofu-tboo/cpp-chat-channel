@@ -22,7 +22,7 @@
 class ChannelServer: public ServerBase {
     public:
         struct ChannelReport {
-			enum { JOIN } type;
+			enum { JOIN, JOIN_BLOCK } type;
             fd_t from;
 			UReportDto dto;
         };

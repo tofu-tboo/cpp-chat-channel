@@ -2,7 +2,7 @@
 
 fd_t ServerBase::fd = -1;
 std::unordered_map<fd_t, std::string> ServerBase::name_map;
-std::mutex ServerBase::name_map_mtx;
+std::shared_mutex ServerBase::name_map_mtx;
 
 ServerBase::ServerBase(const int max_fd, const msec to): con_tracker(nullptr), comm(nullptr), timeout(to) {
     try {
@@ -74,8 +74,8 @@ void ServerBase::proc() {
     }
 }
 
-bool ServerBase::get_user_name(const fd_t fd, std::string& out_user_name) const {
-	std::lock_guard<std::mutex> lock(name_map_mtx);
+bool ServerBase::get_user_name(const fd_t fd, std::string& out_user_name) {
+	std::shared_lock<std::shared_mutex> lock(name_map_mtx);
 	auto it = name_map.find(fd);
 	if (it == name_map.end()) {
 		return false;
@@ -85,12 +85,12 @@ bool ServerBase::get_user_name(const fd_t fd, std::string& out_user_name) const 
 }
 
 void ServerBase::set_user_name(const fd_t fd, const std::string& user_name) {
-	std::lock_guard<std::mutex> lock(name_map_mtx);
+	std::unique_lock<std::shared_mutex> lock(name_map_mtx);
 	name_map[fd] = user_name;
 }
 
 void ServerBase::remove_user_name(const fd_t fd) {
-	std::lock_guard<std::mutex> lock(name_map_mtx);
+	std::unique_lock<std::shared_mutex> lock(name_map_mtx);
 	name_map.erase(fd);
 }
 
