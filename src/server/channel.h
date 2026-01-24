@@ -3,20 +3,10 @@
 
 typedef unsigned int ch_id_t;
 
-#include <cstring>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <netdb.h>
-#include <unistd.h>
-#include <stdexcept>
 #include <thread>
-#include <chrono>
 #include <atomic>
-#include <unordered_map>
-#include <mutex>
 
 #include "chat_server.h"
-#include "../libs/util.h"
 
 class ChannelServer; // Forward declaration
 
@@ -32,6 +22,7 @@ class Channel: public ChatServer {
 		std::unordered_map<fd_t, MessageReqDto> leave_pool;
 
 		std::atomic<bool> paused;
+		std::atomic<msec64> empty_since{0};
     public:
         Channel(ChannelServer* srv, ch_id_t id, const int max_fd = 256);
         ~Channel();
@@ -49,13 +40,15 @@ class Channel: public ChatServer {
 		void wait_stop_pooling();
 		void start_pooling();
 
+		msec64 get_empty_since() const;
+		bool is_stopped() const;
+
     protected: // Sequencially called in proc() => no needed mutex
 		virtual void resolve_deletion() override;
 		virtual void resolve_pool();
 
-        virtual void on_accept() override;
+        virtual void on_accept(const fd_t client) override;
         virtual void on_req(const fd_t from, const char* target, Json& root) override;
-		virtual void on_recv(const fd_t from) override;
 };
 
 #endif

@@ -5,7 +5,6 @@
 #define POOL_FULL      601
 
 #include <unordered_set>
-#include <unistd.h>
 #include <sys/epoll.h>
 #include <mutex>
 

@@ -1,4 +1,4 @@
-#include <stdio.h>
+#include <cstring>
 
 #include "../libs/util.h"
 #include "channel_server.h"

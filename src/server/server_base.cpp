@@ -1,8 +1,6 @@
 #include "server_base.h"
 
 fd_t ServerBase::fd = -1;
-std::unordered_map<fd_t, std::string> ServerBase::name_map;
-std::shared_mutex ServerBase::name_map_mtx;
 
 ServerBase::ServerBase(const int max_fd, const msec to): con_tracker(nullptr), comm(nullptr), timeout(to) {
     try {
@@ -74,26 +72,6 @@ void ServerBase::proc() {
     }
 }
 
-bool ServerBase::get_user_name(const fd_t fd, std::string& out_user_name) {
-	std::shared_lock<std::shared_mutex> lock(name_map_mtx);
-	auto it = name_map.find(fd);
-	if (it == name_map.end()) {
-		return false;
-	}
-	out_user_name = it->second;
-	return true;
-}
-
-void ServerBase::set_user_name(const fd_t fd, const std::string& user_name) {
-	std::unique_lock<std::shared_mutex> lock(name_map_mtx);
-	name_map[fd] = user_name;
-}
-
-void ServerBase::remove_user_name(const fd_t fd) {
-	std::unique_lock<std::shared_mutex> lock(name_map_mtx);
-	name_map.erase(fd);
-}
-
 #pragma region PRIVATE_FUNC
 void ServerBase::set_network() {
     if (fd != FD_ERR) {
@@ -139,7 +117,14 @@ void ServerBase::handle_events(const pollev event) {
     uint32_t evs = event.events;
 
     if (fd == ServerBase::fd) {
-        on_accept();
+		if (!con_tracker) return;
+		fd_t client = accept(ServerBase::fd, nullptr, nullptr);
+		if (client == FD_ERR) {
+			iERROR("Failed to accept new connection.");
+		} else {
+			on_accept(client);
+			LOG("Accepted new connection: fd %d", client);
+		}
     } else if (evs & (EPOLLHUP | EPOLLERR)) {
 		on_disconnect(fd);
 	} else if (evs & EPOLLIN) {
@@ -163,46 +148,29 @@ void ServerBase::resolve_deletion() {
 		} catch (...) {
 			continue;
 		}
-		remove_user_name(fd);
         close(fd);
 		comm->clear_buffer(fd);
         LOG("Normally Disconnected: fd %d", fd);
     }
 }
 
-void ServerBase::on_req(const fd_t from, const char* target, Json& root) {
-    switch (hash(target))
-    {
-    // case hash("message"):
-    //     mq.push_back(payload);
-    //     break;
-    
-    default:
-        break;
-    }
+void ServerBase::on_frame(const fd_t from, const std::string& frame) {
+    // Default implementation does nothing
 }
 
-void ServerBase::on_accept() {
-	if (!con_tracker) return;
-    fd_t client = accept(ServerBase::fd, nullptr, nullptr);
-    if (client == FD_ERR) {
-        iERROR("Failed to accept new connection.");
-    } else {
-        try {
-            con_tracker->add_client(client);
-			set_user_name(client, "user_" + std::to_string(client)); // temporary username assignment
-		} catch (const std::exception& e) {
-			if (dynamic_cast<const coded_runtime_error*>(&e) != nullptr) {
-				const coded_runtime_error& cre = static_cast<const coded_runtime_error&>(e);
-				if (cre.code == POOL_FULL) {
-					comm->send_frame(client, std::string(R"({"type":"error","message":"Server is full."})"));
-				}
+void ServerBase::on_accept(const fd_t client) {
+	try {
+        con_tracker->add_client(client);
+	} catch (const std::exception& e) {
+		if (dynamic_cast<const coded_runtime_error*>(&e) != nullptr) {
+			const coded_runtime_error& cre = static_cast<const coded_runtime_error&>(e);
+			if (cre.code == POOL_FULL) {
+				comm->send_frame(client, std::string(R"({"type":"error","message":"Server is full."})"));
 			}
-            iERROR("%s", e.what());
-            next_deletion.insert(client);
-			return;
-        }
-        LOG("Accepted new connection: fd %d", client);
+		}
+        iERROR("%s", e.what());
+        next_deletion.insert(client);
+		return;
     }
 }
 
@@ -214,6 +182,9 @@ void ServerBase::on_recv(const fd_t from) {
 	try {
 		if (!comm) return;
 		std::vector<std::string> frames = comm->recv_frame(from);
+		for (const std::string& frame : frames) {
+            on_frame(from, frame);
+        }
     } catch (const std::exception& e) {
         iERROR("%s", e.what());
         next_deletion.insert(from);

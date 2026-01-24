@@ -1,16 +1,10 @@
 #ifndef __CHANNEL_SERVER_H__
 #define __CHANNEL_SERVER_H__
 
-#include <unordered_map>
-#include <queue>
-#include <mutex>
-
+#include "typed_frame_server.h"
 #include "chat_server.h"
 #include "channel.h"
 #include "../libs/json.h"
-#include "../libs/socket.h"
-#include "../libs/dto.h"
-#include "../libs/producer_consumer.h"
 
 
 /* Requirement of ChannelServer
@@ -19,7 +13,7 @@
 
 */
 
-class ChannelServer: public ServerBase {
+class ChannelServer: public TypedFrameServer {
     public:
         struct ChannelReport {
 			enum { JOIN } type;
@@ -38,13 +32,16 @@ class ChannelServer: public ServerBase {
         ~ChannelServer();
         void report(const ChannelReport& req);
     protected:
-		virtual void on_accept() override;
-		virtual void on_recv(const fd_t from) override;
+		virtual void resolve_deletion() override;
+
+		virtual void on_accept(const fd_t client) override;
         virtual void on_req(const fd_t from, const char* target, Json& root) override;
 		void consume_report();
 	private:
 		Channel* get_channel(const ch_id_t channel_id);
+        Channel* find_or_create_channel(ch_id_t preferred_id);
 		void check_lobby();
+		void check_channels();
 };
 
 

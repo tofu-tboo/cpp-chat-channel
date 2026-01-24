@@ -17,14 +17,10 @@
 #include <sys/types.h>
 #include <netdb.h>
 #include <unistd.h>
-#include <sys/epoll.h>
-#include <stdlib.h>
 #include <chrono>
 #include <cstdint>
-#include <string>
 #include <algorithm>
 
-#include "../libs/json.h"
 #include "../libs/util.h"
 #include "../libs/socket.h"
 #include "../libs/connection_tracker.h"
@@ -45,12 +41,6 @@ ServerBase assumed that it has one channel.
 class ServerBase {
     protected:
         static fd_t fd;
-		static std::unordered_map<fd_t, std::string> name_map; // username mapping
-		static std::shared_mutex name_map_mtx;
-
-		static bool get_user_name(const fd_t fd, std::string& out_user_name);
-		static void set_user_name(const fd_t fd, const std::string& user_name);
-		static void remove_user_name(const fd_t fd);
     protected:
         int branch_id; // manager branch's id
         ConnectionTracker* con_tracker;
@@ -84,8 +74,8 @@ class ServerBase {
         virtual void resolve_deletion();
 
         // Hooks
-        virtual void on_req(const fd_t from, const char* target, Json& root); // handle both pure json & payload
-        virtual void on_accept();
+        virtual void on_frame(const fd_t from, const std::string& frame);
+        virtual void on_accept(const fd_t client);
 		virtual void on_disconnect(const fd_t fd);
 		virtual void on_recv(const fd_t from);
 };

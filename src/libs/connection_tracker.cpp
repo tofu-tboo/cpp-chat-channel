@@ -1,4 +1,5 @@
 
+#include <unistd.h>
 #include "connection_tracker.h"
 
 ConnectionTracker::ConnectionTracker(fd_t& fd, const int max_fd): efd(FD_ERR), listener_fd(fd), max_fd(max_fd) {}

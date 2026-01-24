@@ -1,9 +1,10 @@
 
 
 #include "chat_server.h"
+#include "user_manager.h"
 
 
-ChatServer::ChatServer(const int max_fd, const msec to): ServerBase(max_fd, to) {
+ChatServer::ChatServer(const int max_fd, const msec to): TypedFrameServer(max_fd, to) {
 	task_runner.pushb(TS_PRE, [this]() {
 		cur_msgs.clear();
 	});
@@ -19,6 +20,20 @@ ChatServer::~ChatServer() {
 }
 
 #pragma region PROTECTED_FUNC
+void ChatServer::resolve_deletion() {
+	if (!con_tracker) return;
+    for (const fd_t fd : next_deletion) {
+		try {
+        	con_tracker->delete_client(fd);
+		} catch (...) {
+			continue;
+		}
+		UserManager::remove_user_name(fd);
+        close(fd);
+		comm->clear_buffer(fd);
+        LOG("Normally Disconnected: fd %d", fd);
+    }
+}
 
 void ChatServer::resolve_timestamps() {
     std::queue<std::pair<fd_t, MessageReqDto>> local_q = mq.pop_all();
@@ -37,6 +52,7 @@ void ChatServer::resolve_broadcast() {
 		switch (req.second.type)
 		{
 		case USER:
+		{
 			type = "user";
 			__ALLOC_JSON_NEW(payload, "{s:s,s:s,s:s,s:I}",
 			"type", type.c_str(), "user_name", req.second.user_name.c_str(), "event", req.second.text.c_str(), "timestamp", timestamp) {
@@ -45,8 +61,10 @@ void ChatServer::resolve_broadcast() {
 				iERROR("Failed to create broadcast JSON.");
 				continue;
 			}
+		}
 			break;
 		case SYSTEM:
+		{
 			type = "system";
 			__ALLOC_JSON_NEW(payload, "{s:s,s:s,s:s,s:I,s:I}",
 			"type", type.c_str(), "user_name", req.second.user_name.c_str(), "event", req.second.text.c_str(), "timestamp", timestamp, "channel_id", req.second.channel_id) {
@@ -55,7 +73,7 @@ void ChatServer::resolve_broadcast() {
 				iERROR("Failed to create broadcast JSON.");
 				continue;
 			}
-			
+		}
 			break;
 		default:
 			break;
@@ -82,7 +100,7 @@ void ChatServer::on_req(const fd_t from, const char* target, Json& root) {
 		msec64 timestamp;
 		__UNPACK_JSON(root, "{s:s,s:I}", "text", &text, "timestamp", &timestamp) {
 			std::string user_name;
-			if (!get_user_name(from, user_name)) {
+			if (!UserManager::get_user_name(from, user_name)) {
 				return;
 			}
 			MessageReqDto msg_req = { .type = USER, .text = std::string(text), .timestamp = timestamp, .user_name = user_name };
@@ -96,31 +114,6 @@ void ChatServer::on_req(const fd_t from, const char* target, Json& root) {
 	default:
 		break;
 	}
-}
-
-void ChatServer::on_recv(const fd_t from) {
-	try {
-		if (!comm) return;
-		std::vector<std::string> frames = comm->recv_frame(from);
-		for (const std::string& frame : frames) {
-			json_error_t err;
-			Json root(json_loads(frame.c_str(), 0, &err));
-			if (root.get() == nullptr) {
-				iERROR("Failed to parse JSON: %s", err.text);
-				return;
-			}
-			
-			const char* type;
-			__UNPACK_JSON(root, "{s:s}", "type", &type) {
-				on_req(from, type, root);
-			} __UNPACK_FAIL {
-				iERROR("Malformed JSON message, missing type.");
-			}
-		}
-	} catch (const std::exception& e) {
-        iERROR("%s", e.what());
-        next_deletion.insert(from);
-    }
 }
 
 #pragma endregion

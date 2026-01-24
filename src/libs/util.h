@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string>
 #include <vector>
+#include <cstdint>
 #include <stdexcept>
 
 #define _EC_                                    "\033[0m"
@@ -39,6 +40,9 @@
 #define __FREES(...)                            frees(CNT_ARGS(__VA_ARGS__), __VA_ARGS__)
 
 void frees(int, ...);
+
+typedef int msec;
+typedef uint64_t msec64;
 
 class coded_runtime_error : public std::runtime_error {
 public:

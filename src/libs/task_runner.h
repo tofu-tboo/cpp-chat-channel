@@ -7,6 +7,9 @@
 #include <stdexcept>
 #include <iterator>
 #include <mutex>
+#include <chrono>
+
+#include "util.h"
 
 template <typename Fn>
 class TaskRunner {
@@ -36,7 +39,21 @@ class TaskRunner {
         std::deque<Task>& session_at(unsigned int idx);
         void _pushb(std::deque<Task>& session, bool flag, const std::function<Fn>& func);
         void _pushf(std::deque<Task>& session, bool flag, const std::function<Fn>& func);
+
+        template <typename Op>
+        void exec_locked(unsigned int idx, Op&& op);
 };
+
+// It is recommended to use universal ref-perfect forwarding when making wrapper.
+template <typename Callable>
+auto AsThrottle(Callable&& func, msec64 timeout) {
+    return [func = std::forward<Callable>(func), timeout, last = msec64(0)]() mutable {
+        msec64 now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        if (now - last < timeout) return;
+        last = now;
+        func();
+    };
+}
 
 #include "task_runner.tpp"
 #endif

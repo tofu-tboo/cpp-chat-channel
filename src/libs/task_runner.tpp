@@ -1,42 +1,37 @@
 #include "task_runner.h"
 
 template <typename Fn>
-void TaskRunner<Fn>::push_oncef(const unsigned int which, const std::function<Fn>& func) {
+template <typename Op>
+void TaskRunner<Fn>::exec_locked(unsigned int idx, Op&& op) {
     std::lock_guard<std::mutex> lock(mtx);
-    auto& session = session_at(which);
-    _pushf(session, true, func);
+    op(session_at(idx));
+}
+
+template <typename Fn>
+void TaskRunner<Fn>::push_oncef(const unsigned int which, const std::function<Fn>& func) {
+    exec_locked(which, [&](auto& session) { _pushf(session, true, func); });
 }
 template <typename Fn>
 void TaskRunner<Fn>::push_onceb(const unsigned int which, const std::function<Fn>& func) {
-    std::lock_guard<std::mutex> lock(mtx);
-    auto& session = session_at(which);
-    _pushb(session, true, func);
+    exec_locked(which, [&](auto& session) { _pushb(session, true, func); });
 }
 
 template <typename Fn>
 void TaskRunner<Fn>::pushf(const unsigned int which, const std::function<Fn>& func) {
-    std::lock_guard<std::mutex> lock(mtx);
-    auto& session = session_at(which);
-    _pushf(session, false, func);
+    exec_locked(which, [&](auto& session) { _pushf(session, false, func); });
 }
 template <typename Fn>
 void TaskRunner<Fn>::pushb(const unsigned int which, const std::function<Fn>& func) {
-    std::lock_guard<std::mutex> lock(mtx);
-    auto& session = session_at(which);
-    _pushb(session, false, func);
+    exec_locked(which, [&](auto& session) { _pushb(session, false, func); });
 }
 
 template <typename Fn>
 void TaskRunner<Fn>::popf(const unsigned int which) {
-    std::lock_guard<std::mutex> lock(mtx);
-    auto& session = session_at(which);
-    session.pop_front();
+    exec_locked(which, [](auto& session) { session.pop_front(); });
 }
 template <typename Fn>
 void TaskRunner<Fn>::popb(const unsigned int which) {
-    std::lock_guard<std::mutex> lock(mtx);
-    auto& session = session_at(which);
-    session.pop_back();
+    exec_locked(which, [](auto& session) { session.pop_back(); });
 }
 
 template <typename Fn>
@@ -74,4 +69,3 @@ template <typename Fn>
 void TaskRunner<Fn>::_pushf(std::deque<Task>& session, bool flag, const std::function<Fn>& func) {
     session.push_front({flag, func});
 }
-#pragma endregion
