@@ -1,7 +1,7 @@
 #include "channel.h"
 #include "channel_server.h"
 
-Channel::Channel(ChannelServer* srv, ch_id_t id, const int max_fd): ChatServer(max_fd, 100), channel_id(id), server(srv) {
+Channel::Channel(ChannelServer* srv, ch_id_t id, const int max_fd): ChatServer(max_fd, 100), channel_id(id), server(srv), paused(false) {
     stop_flag.store(false);
     worker = std::thread(&Channel::proc, this);
 
@@ -31,12 +31,17 @@ void Channel::leave(const fd_t fd, const MessageReqDto& msg) {
 }
 
 void Channel::join(const fd_t fd, const MessageReqDto& msg) {
+	if (stop_flag) {
+		if (worker.joinable()) worker.join(); // 기존 죽은 스레드 정리
+		worker = std::thread(&Channel::proc, this); // 새 스레드 시작
+		stop_flag.store(false);
+	}
 	join_pool.emplace(fd, msg);
 }
 
 void Channel::leave_and_logging(const fd_t fd, msec64 timestamp) {
 	try {		
-		MessageReqDto sys_msg = { .type = SYSTEM, .text = "leave", .timestamp = timestamp };
+		MessageReqDto sys_msg = { .type = SYSTEM, .text = "leave", .timestamp = timestamp, .channel_id = channel_id };
 		if (!get_user_name(fd, sys_msg.user_name)) {
 			next_deletion.insert(fd); // 이름을 알 수 없으면 강제 퇴장
 			return;
@@ -50,7 +55,7 @@ void Channel::leave_and_logging(const fd_t fd, msec64 timestamp) {
 
 void Channel::join_and_logging(const fd_t fd, msec64 timestamp, bool re) {
 	try {		
-		MessageReqDto sys_msg = { .type = SYSTEM, .timestamp = timestamp};
+		MessageReqDto sys_msg = { .type = SYSTEM, .timestamp = timestamp, .channel_id = channel_id };
 
 		if (!get_user_name(fd, sys_msg.user_name)) {
 			return;
@@ -85,7 +90,7 @@ void Channel::resolve_deletion() {
     for (const fd_t fd : next_deletion) {
 		msec64 timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 		
-		MessageReqDto sys_msg = { .type = SYSTEM, .text = "leave", .timestamp = timestamp };
+		MessageReqDto sys_msg = { .type = SYSTEM, .text = "leave", .timestamp = timestamp, .channel_id = channel_id };
 		if (!get_user_name(fd, sys_msg.user_name)) {
 			sys_msg.user_name = "unknown";
 		}
@@ -125,6 +130,10 @@ void Channel::resolve_pool() {
 		} catch (const std::exception& e) {
 			iERROR("%s", e.what());
 		}
+	}
+
+	if (con_tracker->get_client_count() == 0 && join_pool.empty()) {
+		stop_flag.store(true);
 	}
 }
 

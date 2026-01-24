@@ -38,20 +38,29 @@ void ChatServer::resolve_broadcast() {
 		{
 		case USER:
 			type = "user";
+			__ALLOC_JSON_NEW(payload, "{s:s,s:s,s:s,s:I}",
+			"type", type.c_str(), "user_name", req.second.user_name.c_str(), "event", req.second.text.c_str(), "timestamp", timestamp) {
+				json_array_append_new(cur_window.get(), payload);
+			} __ALLOC_FAIL {
+				iERROR("Failed to create broadcast JSON.");
+				continue;
+			}
 			break;
 		case SYSTEM:
 			type = "system";
+			__ALLOC_JSON_NEW(payload, "{s:s,s:s,s:s,s:I,s:I}",
+			"type", type.c_str(), "user_name", req.second.user_name.c_str(), "event", req.second.text.c_str(), "timestamp", timestamp, "channel_id", req.second.channel_id) {
+				json_array_append_new(cur_window.get(), payload);
+			} __ALLOC_FAIL {
+				iERROR("Failed to create broadcast JSON.");
+				continue;
+			}
+			
 			break;
 		default:
 			break;
 		}
-		__ALLOC_JSON_NEW(payload, "{s:s,s:s,s:s,s:I}",
-			"type", type.c_str(), "user_name", req.second.user_name.c_str(), "event", req.second.text.c_str(), "timestamp", timestamp) {
-        	json_array_append_new(cur_window.get(), payload);
-		} __ALLOC_FAIL {
-			iERROR("Failed to create broadcast JSON.");
-			continue;
-		}
+		
     }
     CharDump dumped(json_dumps(cur_window.get(), 0));
     if (dumped) {

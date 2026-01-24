@@ -30,6 +30,8 @@ class Channel: public ChatServer {
 		std::mutex pool_mtx;
 		std::unordered_map<fd_t, MessageReqDto> join_pool;
 		std::unordered_map<fd_t, MessageReqDto> leave_pool;
+
+		std::atomic<bool> paused;
     public:
         Channel(ChannelServer* srv, ch_id_t id, const int max_fd = 256);
         ~Channel();

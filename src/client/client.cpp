@@ -20,6 +20,7 @@
 static std::string g_input_buffer;
 static std::string g_user_name;
 static struct termios g_orig_termios;
+static int g_channel_id = 0;
 
 typedef uint64_t msec64;
 
@@ -104,7 +105,7 @@ static void cls() {
 }
 
 static void refresh_line() {
-    std::cout << "\r\033[K" << _EC_ << "> " << g_input_buffer << std::flush;
+    std::cout << "\r\033[K" << _EC_ << "[Ch " << g_channel_id << "] > " << g_input_buffer << std::flush;
 }
 
 static void print_line(json_t* obj) {
@@ -116,6 +117,11 @@ static void print_line(json_t* obj) {
         const char* event = json_string_value(json_object_get(obj, "event"));
         const char* user = json_string_value(json_object_get(obj, "user_name"));
         if (event && user) {
+            if (g_user_name == user && (strcmp(event, "join") == 0 || strcmp(event, "rejoin") == 0)) {
+                json_t* ch_id_json = json_object_get(obj, "channel_id");
+                if (ch_id_json && json_is_integer(ch_id_json))
+                    g_channel_id = (int)json_integer_value(ch_id_json);
+            }
             std::string msg = std::string("[System] ") + user + " " + event;
             int pad = (width - (int)msg.length()) / 2;
             if (pad < 0) pad = 0;
@@ -196,7 +202,27 @@ int main(int argc, char* argv[]) {
     std::string port = "4800";
 
     for (int i = 1; i < argc; i++) {
-        if (strncmp(argv[i], "host=", 5) == 0) host = argv[i] + 5;
+        if (strncmp(argv[i], "host=", 5) == 0) {
+            std::string url = argv[i] + 5;
+            std::string default_port = "4800";
+
+            size_t p = url.find("://");
+            if (p != std::string::npos) {
+                std::string scheme = url.substr(0, p);
+                if (scheme == "https") default_port = "443";
+                else if (scheme == "http") default_port = "80";
+                url = url.substr(p + 3);
+            }
+
+            p = url.find(':');
+            if (p != std::string::npos) {
+                host = url.substr(0, p);
+                port = url.substr(p + 1);
+            } else {
+                host = url;
+                port = default_port;
+            }
+        }
         else if (strncmp(argv[i], "port=", 5) == 0) port = argv[i] + 5;
     }
 
@@ -209,6 +235,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     std::cout << _CG_ "Connected to " << host << ":" << port << _EC_ << std::endl;
+	std::cout << "You can change the channel by a command \"/join <number>\"" << std::endl;
 
     // Send Join
     json_t* join_obj = json_pack("{s:s, s:I, s:s, s:I}", 
@@ -221,6 +248,73 @@ int main(int argc, char* argv[]) {
     free(join_dump);
     json_decref(join_obj);
 
+    std::cout << "Waiting for server response..." << std::endl;
+
+    std::string acc;
+    bool joined = false;
+    char buf[4096];
+
+    // Join 응답 대기 루프 (Blocking)
+    while (!joined) {
+        ssize_t n = recv(fd, buf, sizeof(buf), 0);
+        if (n <= 0) {
+            std::cerr << "Connection closed or failed during handshake." << std::endl;
+            close(fd);
+            return 1;
+        }
+        acc.append(buf, n);
+
+        while (acc.size() >= 4) {
+            uint32_t len = 0;
+            try {
+                len = std::stoul(acc.substr(0, 4), nullptr, 16);
+            } catch (...) { return 1; }
+
+            if (acc.size() < 4 + len) break;
+            std::string payload = acc.substr(4, len);
+            
+            json_error_t err;
+            json_t* obj = json_loadb(payload.data(), payload.size(), 0, &err);
+            if (obj) {
+                if (json_is_array(obj)) {
+                    size_t index;
+                    json_t *value;
+                    json_array_foreach(obj, index, value) {
+                        const char* type = json_string_value(json_object_get(value, "type"));
+                        if (type && strcmp(type, "system") == 0) {
+                            const char* event = json_string_value(json_object_get(value, "event"));
+                            if (event && (strcmp(event, "join") == 0 || strcmp(event, "rejoin") == 0)) {
+                                json_t* ch_id_json = json_object_get(value, "channel_id");
+                                if (ch_id_json && json_is_integer(ch_id_json))
+                                    g_channel_id = (int)json_integer_value(ch_id_json);
+                                joined = true;
+                            }
+                        } else if (type && strcmp(type, "error") == 0) {
+                            std::cerr << "Join failed: " << json_string_value(json_object_get(value, "message")) << std::endl;
+                            return 1;
+                        }
+                    }
+                } else {
+                    const char* type = json_string_value(json_object_get(obj, "type"));
+                    if (type && strcmp(type, "system") == 0) {
+                        const char* event = json_string_value(json_object_get(obj, "event"));
+                        if (event && (strcmp(event, "join") == 0 || strcmp(event, "rejoin") == 0)) {
+                            json_t* ch_id_json = json_object_get(obj, "channel_id");
+                            if (ch_id_json && json_is_integer(ch_id_json))
+                                g_channel_id = (int)json_integer_value(ch_id_json);
+                            joined = true;
+                        }
+                    } else if (type && strcmp(type, "error") == 0) {
+                        std::cerr << "Join failed: " << json_string_value(json_object_get(obj, "message")) << std::endl;
+                        return 1;
+                    }
+                }
+                json_decref(obj);
+            }
+            acc.erase(0, 4 + len);
+        }
+    }
+
     enableRawMode();
     cls();
     refresh_line();
@@ -231,7 +325,6 @@ int main(int argc, char* argv[]) {
     fds[1].fd = STDIN_FILENO;
     fds[1].events = POLLIN;
 
-    std::string acc;
     bool running = true;
 
     while (running) {

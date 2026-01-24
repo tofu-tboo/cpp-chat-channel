@@ -1,11 +1,11 @@
 PACKAGES = -ljansson
 OUT_DIR = exe
-# 기본 컴파일 옵션 (여기에 -g를 넣다 뺐다 할 수 있음)
 CXXFLAGS = -O2 
+# 윈도우 크로스 컴파일러 (Linux/WSL에서 Windows용 빌드 시 필요. 예: sudo apt install mingw-w64)
+CXX_WIN = x86_64-w64-mingw32-g++
 
 .PHONY: all client server clean libs debug
 
-# debug 타겟을 실행하면 CXXFLAGS에 -g를 추가하고 all을 실행
 debug: CXXFLAGS = -g -DDEBUG
 debug: all
 
@@ -16,6 +16,10 @@ $(OUT_DIR):
 
 client: src/client/client.cpp | $(OUT_DIR)
 	g++ $(CXXFLAGS) -o $(OUT_DIR)/$@ $^ $(PACKAGES)
+
+# 윈도우용 클라이언트 빌드 (Linux/WSL에서 크로스 컴파일)
+client_win: src/client/client_win.cpp src/libs/util.cpp | $(OUT_DIR)
+	$(CXX_WIN) $(CXXFLAGS) -o $(OUT_DIR)/client.exe $^ -lws2_32 -static
 
 server: src/server/server.cpp src/server/server_base.cpp src/server/channel_server.cpp src/server/chat_server.cpp src/server/channel.cpp src/libs/util.cpp src/libs/json.cpp src/libs/connection_tracker.cpp src/libs/communication.cpp | $(OUT_DIR)
 	g++ $(CXXFLAGS) -o $(OUT_DIR)/$@ $^ $(PACKAGES)

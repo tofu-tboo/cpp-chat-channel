@@ -20,7 +20,9 @@
 #endif
 #define LOG2(format, ...)						printf(format, ##__VA_ARGS__)
 #define LOG(format, ...)                        printf(format "\n", ##__VA_ARGS__)
+#ifndef ERROR
 #define ERROR(format, ...)                      printf(_CR_ format _EC_ "\n", ##__VA_ARGS__)
+#endif
 
 #define SELECT_ARITIES(_1,_2,_3,_4,FUNC,...)    FUNC
 #define AMP1(a)                                 &a

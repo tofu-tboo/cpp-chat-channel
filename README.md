@@ -25,7 +25,8 @@
 	type: "system",
 	event: "join" | "rejoin",
 	user_name: string,
-	timestamp: int
+	timestamp: int,
+	channel_id: int
 }
 ```
 
