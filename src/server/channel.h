@@ -10,6 +10,7 @@ typedef unsigned int ch_id_t;
 #include <unistd.h>
 #include <stdexcept>
 #include <thread>
+#include <chrono>
 #include <atomic>
 
 #include "chat_server.h"
@@ -37,7 +38,9 @@ class Channel: public ChatServer {
 
     protected: // Sequencially called in proc() => no needed mutex
         virtual void on_accept() override;
+		virtual void on_disconnect(const fd_t fd) override;
         virtual void on_req(const fd_t from, const char* target, Json& root) override;
+		virtual void on_recv(const fd_t from) override;
 };
 
 #endif

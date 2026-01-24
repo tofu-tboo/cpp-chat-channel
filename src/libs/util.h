@@ -18,6 +18,7 @@
 #else
 #define DLOG(format, ...) // log for debug mode
 #endif
+#define LOG2(format, ...)						printf(format, ##__VA_ARGS__)
 #define LOG(format, ...)                        printf(format "\n", ##__VA_ARGS__)
 #define ERROR(format, ...)                      printf(_CR_ format _EC_ "\n", ##__VA_ARGS__)
 
@@ -37,6 +38,13 @@
 
 void frees(int, ...);
 
+class coded_runtime_error : public std::runtime_error {
+public:
+    int code;
+    coded_runtime_error(int c, const std::string& s) : std::runtime_error(s), code(c) {}
+    coded_runtime_error(int c, const char* s) : std::runtime_error(s), code(c) {}
+};
+
 inline constexpr unsigned int hash(const char* str) {
     return str && str[0] ? static_cast<unsigned int>(str[0]) + 0xEDB8832Full * hash(str + 1) : 8603;
 }
@@ -55,6 +63,22 @@ std::runtime_error runtime_errorf(const char* fmt, Args&&... args) {
     std::vector<char> big(n + 1);
     snprintf(big.data(), big.size(), fmt, std::forward<Args>(args)...);
     return std::runtime_error(big.data());
+}
+
+template <typename... Args>
+coded_runtime_error runtime_errorf(int code, const char* fmt, Args&&... args) {
+    char buf[256];
+    int n = snprintf(buf, sizeof(buf), fmt, std::forward<Args>(args)...);
+    if (n < 0) {
+        return coded_runtime_error(code, "format error");
+    }
+    if (n < static_cast<int>(sizeof(buf))) {
+        return coded_runtime_error(code, buf);
+    }
+    // 버퍼가 모자라면 정확한 크기만큼 할당 후 다시 포맷
+    std::vector<char> big(n + 1);
+    snprintf(big.data(), big.size(), fmt, std::forward<Args>(args)...);
+    return coded_runtime_error(code, big.data());
 }
 
 #endif

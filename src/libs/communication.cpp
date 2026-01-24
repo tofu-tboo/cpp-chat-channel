@@ -1,7 +1,7 @@
-
 #include <cstdio>
 #include <string>
 #include <sys/socket.h>
+#include <cerrno>
 
 #include "communication.h"
 
@@ -12,17 +12,21 @@ Communication::~Communication() {
 std::vector<std::string> Communication::recv_frame(const fd_t fd) {
 	// NEEDS: attach 4-byte length header to each frame
 
-    char buf[4096];
-    ssize_t n = recv(fd, buf, sizeof(buf), 0);
-    if (n < 0) {
-        throw std::runtime_error("Minus frame.");
-    } else if (n == 0) {
-		throw runtime_errorf("Disconnected: fd %d", fd);
-	}
-
 	std::vector<std::string> frames;
     std::string& acc = rbuf[fd];
-    acc.append(buf, n);
+    char buf[4096];
+
+    while (true) {
+        ssize_t n = recv(fd, buf, sizeof(buf), MSG_DONTWAIT);
+        if (n < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+            throw std::runtime_error("Recv failed.");
+        } else if (n == 0) {
+            throw runtime_errorf(DISCONNECTED_BY_FIN, "Disconnected: fd %d", fd);
+        }
+        acc.append(buf, n);
+        if (n < 4096) break;
+    }
 
     while (acc.size() >= 4) {
         uint32_t len = 0;

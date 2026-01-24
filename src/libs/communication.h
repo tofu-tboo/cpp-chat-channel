@@ -1,7 +1,8 @@
 #ifndef __COMMUNICATION_H__
 #define __COMMUNICATION_H__
 
-#define MAX_FRAME_SIZE      (16 * 1024)
+#define MAX_FRAME_SIZE      		(16 * 1024)
+#define DISCONNECTED_BY_FIN 		500
 
 #include <unordered_set>
 #include <unordered_map>
@@ -12,7 +13,6 @@
 #include "../libs/socket.h"
 #include "../libs/util.h"
 
-// TODO: consider frame exception
 class Communication {
 	private:
         std::unordered_map<fd_t, std::string> rbuf; // per-connection accumulation buffer

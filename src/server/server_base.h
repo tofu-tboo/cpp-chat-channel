@@ -1,7 +1,7 @@
 #ifndef __SERVER_BASE_H__
 #define __SERVER_BASE_H__
 
-#define iERROR(...)         LOG(_CR_ "[%x] " _EC_, branch_id); ERROR(__VA_ARGS__)
+#define iERROR(...)         LOG2(_CR_ "[%x] " _EC_, branch_id); ERROR(__VA_ARGS__)
 
 #include <unordered_map>
 #include <unordered_set>
@@ -12,8 +12,20 @@
 #include <functional>
 #include <stdexcept>
 #include <mutex>
+#include <cstring>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netdb.h>
+#include <unistd.h>
+#include <sys/epoll.h>
+#include <stdlib.h>
+#include <chrono>
+#include <cstdint>
+#include <string>
+#include <algorithm>
 
 #include "../libs/json.h"
+#include "../libs/util.h"
 #include "../libs/socket.h"
 #include "../libs/connection_tracker.h"
 #include "../libs/task_runner.h"

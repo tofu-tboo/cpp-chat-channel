@@ -80,6 +80,12 @@ void Channel::join_and_logging(const fd_t fd, msec64 timestamp, bool re) {
 #pragma region PROTECTED_FUNC
 
 void Channel::on_accept() {} // accept only occured in lobby(ChannelServer)
+void Channel::on_disconnect(const fd_t fd) {
+	msec64 timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::system_clock::now().time_since_epoch()).count();
+	leave_and_logging(fd, timestamp);
+	next_deletion.push_back(fd);
+}
 void Channel::on_req(const fd_t from, const char* target, Json& root) {
     switch (hash(target)) {
     case hash("message"):
@@ -87,7 +93,6 @@ void Channel::on_req(const fd_t from, const char* target, Json& root) {
     case hash("MESSAGE"):
 		ChatServer::on_req(from, target, root);
         break;
-	// TODO: leave === disconnection
     case hash("join"):
     case hash("Join"):
     case hash("JOIN"):
@@ -109,4 +114,37 @@ void Channel::on_req(const fd_t from, const char* target, Json& root) {
         break;
     }
 }
+
+void Channel::on_recv(const fd_t from) {
+	try {
+		if (!comm) return;
+		std::vector<std::string> frames = comm->recv_frame(from);
+		for (const std::string& frame : frames) {
+			json_error_t err;
+			Json root(json_loads(frame.c_str(), 0, &err));
+			if (root.get() == nullptr) {
+				iERROR("Failed to parse JSON: %s", err.text);
+				return;
+			}
+			
+			const char* type;
+			__UNPACK_JSON(root, "{s:s}", "type", &type) {
+				on_req(from, type, root);
+			} __UNPACK_FAIL {
+				iERROR("Malformed JSON message, missing type.");
+			}
+		}
+	} catch (const std::exception& e) {
+		iERROR("%s", e.what());
+		if (dynamic_cast<const coded_runtime_error*>(&e) != nullptr) {
+			const coded_runtime_error& cre = static_cast<const coded_runtime_error&>(e);
+			if (cre.code == DISCONNECTED_BY_FIN) {
+				on_disconnect(from);
+				return;
+			}
+		}
+        next_deletion.push_back(from);
+    }
+}
+
 #pragma endregion

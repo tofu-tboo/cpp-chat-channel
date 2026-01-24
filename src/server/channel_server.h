@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <queue>
 #include <mutex>
+#include <ctime>
 
 #include "chat_server.h"
 #include "channel.h"
@@ -19,7 +20,6 @@
 
 */
 
-// TODO: lobby timeout (5s)
 class ChannelServer: public ServerBase {
     public:
         struct ChannelReport {
@@ -31,16 +31,19 @@ class ChannelServer: public ServerBase {
         std::unordered_map<ch_id_t, Channel*> channels;
 		ProducerConsumerQueue<ChannelReport> reports;
         std::mutex report_mtx;
+		std::unordered_map<fd_t, clock_t> last_act;
     public:
         ChannelServer(const int max_fd = 256, const msec to = 0);
         ~ChannelServer();
         void report(const ChannelReport& req);
     protected:
+		virtual void on_accept() override;
 		virtual void on_recv(const fd_t from) override;
         virtual void on_req(const fd_t from, const char* target, Json& root) override;
 		void consume_report();
 	private:
 		Channel* get_channel(const ch_id_t channel_id);
+		void check_lobby();
 };
 
 

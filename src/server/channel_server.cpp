@@ -12,6 +12,9 @@ ChannelServer::ChannelServer(const int max_fd, const msec to): ServerBase(max_fd
     task_runner.pushb(0, [this]() {
         consume_report();
     });
+	task_runner.pushf(2, [this]() {
+		check_lobby();
+	});
 }
 
 ChannelServer::~ChannelServer() {
@@ -39,6 +42,26 @@ void ChannelServer::report(const ChannelReport& req) {
 
 
 #pragma region PROTECTED_FUNC
+void ChannelServer::on_accept() {
+	if (!con_tracker) return;
+    fd_t client = accept(ServerBase::fd, nullptr, nullptr);
+    if (client == FD_ERR) {
+        iERROR("Failed to accept new connection.");
+    } else {
+        LOG("Accepted new connection: fd %d", client);
+        try {
+            con_tracker->add_client(client);
+			set_user_name(client, "user_" + std::to_string(client)); // temporary username assignment
+
+			last_act[client] = clock();
+		} catch (const std::exception& e) {
+            iERROR("%s", e.what());
+            con_tracker->delete_client(client);
+            close(client);
+        }
+    }
+}
+
 void ChannelServer::on_recv(const fd_t from) {
 	try {
 		if (!comm) return;
@@ -117,5 +140,20 @@ Channel* ChannelServer::get_channel(const ch_id_t channel_id) {
 		LOG(_CG_ "Channel %u created." _EC_, channel_id);
 	}
 	return channels[channel_id];
+}
+
+void ChannelServer::check_lobby() {
+	clock_t now = clock();
+	std::unordered_map<fd_t, clock_t> next;
+	for (const auto& [fd, t] : last_act) {
+		double elapsed_secs = now - t;
+		if (elapsed_secs < 5000) {
+			next[fd] = t;
+		} else {
+			LOG("Lobby timeout: fd %d", fd);
+			next_deletion.push_back(fd);
+		}
+	}
+	last_act = std::move(next);
 }
 #pragma endregion

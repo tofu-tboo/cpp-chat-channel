@@ -1,7 +1,6 @@
 #ifndef __CHAT_SERVER_H__
 #define __CHAT_SERVER_H__
 
-
 #include "server_base.h"
 #include "../libs/socket.h"
 #include "../libs/dto.h"
