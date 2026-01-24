@@ -4,11 +4,11 @@
 
 
 ChatServer::ChatServer(const int max_fd, const msec to): ServerBase(max_fd, to) {
-	task_runner.pushb(0, [this]() {
+	task_runner.pushb(TS_PRE, [this]() {
 		cur_msgs.clear();
 	});
     // 매 틱마다 mq를 확인하고 브로드캐스트 수행 (이벤트가 없어도 실행됨)
-    task_runner.pushf(2, [this]() {
+    task_runner.pushf(TS_LOGIC, [this]() {
         resolve_timestamps();
         resolve_broadcast();
     });

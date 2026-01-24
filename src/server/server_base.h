@@ -56,6 +56,13 @@ class ServerBase {
         ConnectionTracker* con_tracker;
 		Communication* comm;
 
+        enum TaskSession {
+            TS_PRE = 0,   // 전처리: 큐 소비, 버퍼 정리
+            TS_POLL = 1,  // I/O: 폴링, 이벤트 처리
+            TS_LOGIC = 2, // 로직: 메시지 처리, 브로드캐스트, 삭제
+            TS_COUNT = 3
+        };
+
         msec timeout;
 
         std::unordered_set<fd_t> next_deletion;

@@ -21,17 +21,17 @@ ServerBase::ServerBase(const int max_fd, const msec to): con_tracker(nullptr), c
 
 		comm = new Communication();
 
-        task_runner.new_session(3);
+        task_runner.new_session(TS_COUNT);
 		// Cleanup Qs
-        task_runner.pushb(0, [this]() {
+        task_runner.pushb(TS_PRE, [this]() {
             next_deletion.clear();
         });
 		// Polling
-        task_runner.pushb(1, [this]() {
+        task_runner.pushb(TS_POLL, [this]() {
             con_tracker->polling(timeout);
         });
 		// Handle Events
-		task_runner.pushb(1, [this]() {
+		task_runner.pushb(TS_POLL, [this]() {
 			const pollev* events = con_tracker->get_ev();
 			const int evcnt = con_tracker->get_evcnt();
 
@@ -40,7 +40,7 @@ ServerBase::ServerBase(const int max_fd, const msec to): con_tracker(nullptr), c
 			}
 		});
 		// Deletion fds
-        task_runner.pushb(2, [this]() {
+        task_runner.pushb(TS_LOGIC, [this]() {
             resolve_deletion();
         });
     } catch (const std::exception& e) {

@@ -37,6 +37,8 @@ class ConnectionTracker {
         const int get_evcnt() const;
         std::unordered_set<fd_t> get_clients() const;
 		bool is_full() const;
+		int get_max_fd() const;
+		size_t get_client_count() const;
 };
 
 #endif

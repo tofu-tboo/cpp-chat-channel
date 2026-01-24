@@ -5,7 +5,7 @@ Channel::Channel(ChannelServer* srv, ch_id_t id, const int max_fd): ChatServer(m
     stop_flag.store(false);
     worker = std::thread(&Channel::proc, this);
 
-	task_runner.pushf(2, [this]() {
+	task_runner.pushf(TS_LOGIC, [this]() {
 		resolve_pool();
 	});
 }
@@ -28,20 +28,10 @@ void Channel::proc() {
 
 void Channel::leave(const fd_t fd, const MessageReqDto& msg) {
 	leave_pool.emplace(fd, msg);
-    // try {
-    //     con_tracker->delete_client(fd);
-    // } catch (const std::exception& e) {
-    //     iERROR("%s", e.what());
-    // }
 }
 
 void Channel::join(const fd_t fd, const MessageReqDto& msg) {
 	join_pool.emplace(fd, msg);
-    // try {
-    //     con_tracker->add_client(fd);
-    // } catch (const std::exception& e) {
-    //     iERROR("%s", e.what());
-    // }
 }
 
 void Channel::leave_and_logging(const fd_t fd, msec64 timestamp) {
@@ -51,8 +41,6 @@ void Channel::leave_and_logging(const fd_t fd, msec64 timestamp) {
 			next_deletion.insert(fd); // 이름을 알 수 없으면 강제 퇴장
 			return;
 		}
-
-	    mq.push({fd, sys_msg});
 
 		leave(fd, sys_msg);
 	} catch (const std::exception& e) {
@@ -71,8 +59,6 @@ void Channel::join_and_logging(const fd_t fd, msec64 timestamp, bool re) {
 
 		sys_msg.text = re ? "rejoin" : "join";
 
-	    mq.push({fd, sys_msg});
-
 		join(fd, sys_msg);
 	} catch (const std::exception& e) {
         iERROR("Logging failed: %s", e.what());
@@ -80,8 +66,16 @@ void Channel::join_and_logging(const fd_t fd, msec64 timestamp, bool re) {
 }
 
 bool Channel::ping_pool() {
-	std::lock_guard<std::mutex> lock(pool_mtx);
-	return !con_tracker->is_full();
+	if (!con_tracker) return false;
+	return (con_tracker->get_client_count() + join_pool.size()) < static_cast<size_t>(con_tracker->get_max_fd());
+}
+
+void Channel::wait_stop_pooling() {
+	pool_mtx.lock();
+}
+
+void Channel::start_pooling() {
+	pool_mtx.unlock();
 }
 
 #pragma region PROTECTED_FUNC
@@ -106,19 +100,9 @@ void Channel::resolve_pool() {
 	for (const auto& [fd, msg] : local_q) {
 		try {
 			con_tracker->add_client(fd);
+		    mq.push({fd, msg});
         	LOG(_CB_ "[Join] User (fd: %d) joined channel %u at %lu" _EC_, fd, channel_id, msg.timestamp);
 		} catch (const std::exception& e) {
-			if (dynamic_cast<const coded_runtime_error*>(&e) != nullptr) {
-				const coded_runtime_error& cre = static_cast<const coded_runtime_error&>(e);
-				if (cre.code == POOL_FULL) {
-					UReportDto dto;
-					dto.join_block = new JoinBlockReqDto{ .channel_id = channel_id, .timestamp = msg.timestamp };
-					
-					server->report({ChannelServer::ChannelReport::JOIN_BLOCK, fd, dto});
-					iERROR("Channel %u is full.", channel_id);
-					continue;
-				}
-			}
 			iERROR("%s", e.what());
 		}
 	}
@@ -126,6 +110,7 @@ void Channel::resolve_pool() {
 	for (const auto& [fd, msg] : local_q) {
 		try {
 			con_tracker->delete_client(fd);
+		    mq.push({fd, msg});
 			LOG(_CR_ "[Leave] User (fd: %d) left channel %u at %lu" _EC_, fd, channel_id, msg.timestamp);
 		} catch (const std::exception& e) {
 			iERROR("%s", e.what());
@@ -144,23 +129,13 @@ void Channel::on_req(const fd_t from, const char* target, Json& root) {
     case hash("Join"):
     case hash("JOIN"):
         {
-			ch_id_t channel_id;
+			ch_id_t ch_to;
 			msec64 timestamp;
-			__UNPACK_JSON(root, "{s:I,s:I}", "channel_id", &channel_id, "timestamp", &timestamp) {
+			__UNPACK_JSON(root, "{s:I,s:I}", "channel_id", &ch_to, "timestamp", &timestamp) {
 				UReportDto dto;
-				dto.rejoin = new RejoinReqDto{ .channel_id = channel_id, .timestamp = timestamp };
+				dto.join = new JoinReqDto{ .ch_from = ch_to, .ch_to = channel_id, .timestamp = timestamp };
 
-				try {
-					server->report({ChannelServer::ChannelReport::JOIN, from, dto});
-					leave_and_logging(from, timestamp);
-				} catch (const std::exception& e) {
-					if (dynamic_cast<const coded_runtime_error*>(&e) != nullptr) {
-						const coded_runtime_error& cre = static_cast<const coded_runtime_error&>(e);
-						if (cre.code == POOL_FULL) {
-							comm->send_frame(from, std::string(R"({"type":"error","message":"The channel is full."})"));
-						}
-					}
-				}
+				server->report({ChannelServer::ChannelReport::JOIN, from, dto});
 			} __UNPACK_FAIL {
 				iERROR("Malformed JSON message, missing channel_id.");
 			}

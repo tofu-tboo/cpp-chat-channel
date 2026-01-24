@@ -44,6 +44,9 @@ class Channel: public ChatServer {
 
 		bool ping_pool();
 
+		void wait_stop_pooling();
+		void start_pooling();
+
     protected: // Sequencially called in proc() => no needed mutex
 		virtual void resolve_deletion() override;
 		virtual void resolve_pool();

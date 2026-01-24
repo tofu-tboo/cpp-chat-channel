@@ -9,10 +9,10 @@
 
 ChannelServer::ChannelServer(const int max_fd, const int ch_max_fd, const msec to): ServerBase(max_fd, to), ch_max_fd(ch_max_fd) {
     // Periodically process switch requests from channels
-    task_runner.pushb(0, [this]() {
+    task_runner.pushb(TS_PRE, [this]() {
         consume_report();
     });
-	task_runner.pushf(2, [this]() {
+	task_runner.pushf(TS_LOGIC, [this]() {
 		check_lobby();
 	});
 }
@@ -27,9 +27,7 @@ ChannelServer::~ChannelServer() {
         ChannelReport req = local_q.front();
         local_q.pop();
         if (req.type == ChannelReport::JOIN) {
-			if (req.dto.rejoin)
-            	delete req.dto.rejoin;
-			else if (req.dto.join)
+			if (req.dto.join)
 				delete req.dto.join;
 		}
     }
@@ -37,14 +35,14 @@ ChannelServer::~ChannelServer() {
 }
 
 void ChannelServer::report(const ChannelReport& req) {
-	switch (req.type) {
-	case ChannelReport::JOIN:
-		if (!get_channel(req.dto.rejoin->channel_id)->ping_pool()) {
-			iERROR("Channel %u is full.", req.dto.rejoin->channel_id);
-			throw runtime_errorf(POOL_FULL);
-		}
-		break;
-	}
+	// switch (req.type) {
+	// case ChannelReport::JOIN:
+	// 	if (!get_channel(req.dto.rejoin->channel_id)->ping_pool()) {
+	// 		iERROR("Channel %u is full.", req.dto.rejoin->channel_id);
+	// 		throw runtime_errorf(POOL_FULL);
+	// 	}
+	// 	break;
+	// }
     reports.push(req);
 }
 
@@ -113,7 +111,11 @@ void ChannelServer::on_req(const fd_t from, const char* target, Json& root) {
 			__UNPACK_JSON(root, "{s:I,s:I,s:s}", "channel_id", &channel_id, "timestamp", &timestamp, "user_name", &user_name) {
 				set_user_name(from, std::string(user_name)); // user_%d -> real user_name
 
+				// TODO
+				get_channel(channel_id)->wait_stop_pooling();
 				if (!get_channel(channel_id)->ping_pool()) {
+					get_channel(channel_id)->start_pooling();
+
 					std::vector<ch_id_t> candidates;
 					for (auto& [id, ch] : channels) {
 						if (id == channel_id) continue;
@@ -129,8 +131,7 @@ void ChannelServer::on_req(const fd_t from, const char* target, Json& root) {
 						while (channels.find(channel_id) != channels.end()) channel_id++;
 					}
 				}
-
-				JoinReqDto req = { .channel_id = channel_id, .timestamp = timestamp, .user_name = std::string(user_name) };
+				get_channel(channel_id)->start_pooling();
 
                 get_channel(channel_id)->join_and_logging(from, timestamp, false);
 
@@ -155,35 +156,23 @@ void ChannelServer::consume_report() {
 		switch (req.type) {
 		case ChannelReport::JOIN:
 			{
-				ch_id_t channel_id = req.dto.rejoin->channel_id;
-				msec64 timestamp = req.dto.rejoin->timestamp;
-				get_channel(channel_id)->join_and_logging(req.from, timestamp, true);
-                delete req.dto.rejoin; // Consumer takes responsibility for deletion
-			}
-			break;
-		case ChannelReport::JOIN_BLOCK:
-			{
-				// ch_id_t failed_id = req.dto.join_block->channel_id;
-				// msec64 timestamp = req.dto.join_block->timestamp;
+				msec64 timestamp = req.dto.join->timestamp;
+				Channel* ch_from = get_channel(req.dto.join->ch_from);
+				Channel* ch_to = get_channel(req.dto.join->ch_to);
+				ch_to->wait_stop_pooling();
+				
+				if (!ch_to->ping_pool()) {
+					iERROR("Channel %u is full.", req.dto.join->ch_to);
+					comm->send_frame(req.from, std::string(R"({"type":"error","message":"The channel is full."})"));
+					ch_to->start_pooling();
+					continue;
+				}
 
-				// std::vector<ch_id_t> candidates;
-				// for (auto& [id, ch] : channels) {
-				// 	if (id == failed_id) continue;
-				// 	if (ch->ping_pool()) {
-				// 		candidates.push_back(id);
-				// 	}
-				// }
+				ch_to->join_and_logging(req.from, timestamp, true);
+				ch_from->leave_and_logging(req.from, timestamp);
 
-				// ch_id_t next_id;
-				// if (!candidates.empty()) {
-				// 	next_id = candidates[rand() % candidates.size()];
-				// } else {
-				// 	next_id = 1;
-				// 	while (channels.find(next_id) != channels.end()) next_id++;
-				// }
-
-				// get_channel(next_id)->join_and_logging(req.from, timestamp, true);
-                // delete req.dto.join_block; // Consumer takes responsibility for deletion
+				ch_to->start_pooling();
+                delete req.dto.join; // Consumer takes responsibility for deletion
 			}
 			break;
 		}

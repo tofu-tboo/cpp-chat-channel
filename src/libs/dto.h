@@ -20,30 +20,14 @@ typedef struct {
 
 typedef struct {
 	// std::string type;
-	ch_id_t channel_id;
+	ch_id_t ch_from;
+	ch_id_t ch_to;
 	msec64 timestamp;
 	std::string user_name;
 } JoinReqDto;
 
-typedef struct {
-	// std::string type;
-	ch_id_t channel_id;
-	msec64 timestamp;
-} RejoinReqDto;
-
 typedef union {
 	JoinReqDto* join;
-	RejoinReqDto* rejoin;
-} UJoinDto;
-
-typedef struct {
-	ch_id_t channel_id;
-	msec64 timestamp;
-} JoinBlockReqDto;
-typedef union {
-	JoinReqDto* join;
-	RejoinReqDto* rejoin;
-	JoinBlockReqDto* join_block;
 	// etc...
 } UReportDto;
 #endif

@@ -96,3 +96,12 @@ bool ConnectionTracker::is_full() const {
 	std::lock_guard<std::mutex> lock(mtx);
 	return clients.size() >= max_fd;
 }
+
+int ConnectionTracker::get_max_fd() const {
+	return max_fd;
+}
+
+size_t ConnectionTracker::get_client_count() const {
+	std::lock_guard<std::mutex> lock(mtx);
+	return clients.size();
+}
