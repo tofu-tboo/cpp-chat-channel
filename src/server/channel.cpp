@@ -37,32 +37,41 @@ void Channel::join(const fd_t fd) {
     }
 }
 
-void Channel::join_and_logging(const fd_t fd, UJoinDto req, bool re) {
+void Channel::leave_and_logging(const fd_t fd, msec64 timestamp) {
 	try {		
-        msec64 ts = 0;
+		std::string user_name;
+		if (!get_user_name(fd, user_name)) {
+			next_deletion.push_back(fd); // 이름을 알 수 없으면 강제 퇴장
+			return;
+		}
+
+		MessageReqDto sys_msg = { .type = SYSTEM, .text = "leave", .timestamp = timestamp };
+	    mq.push({fd, sys_msg});
+
+		leave(fd);
+		LOG(_CR_ "[Leave] User (fd: %d) left channel %u at %lu" _EC_, fd, channel_id, timestamp);
+	} catch (const std::exception& e) {
+		iERROR("Logging failed: %s", e.what());
+	}
+}
+
+void Channel::join_and_logging(const fd_t fd, msec64 timestamp, bool re) {
+	try {		
         std::string uname;
 		std::string event;
 
-        if (re && req.rejoin) {
-            ts = req.rejoin->timestamp;
-			if (!get_user_name(fd, uname)) {
-				next_deletion.push_back(fd); // 이름을 알 수 없으면 강제 퇴장
-				return;
-			}
+		if (!get_user_name(fd, uname)) {
+			next_deletion.push_back(fd); // 이름을 알 수 없으면 강제 퇴장
+			return;
+		}
 
-			event = "rejoin";
-        } else if (!re && req.join) {
-            ts = req.join->timestamp;
-            uname = req.join->user_name;
-			event = "join";
-        }
+		event = re ? "rejoin" : "join";
 
-
-		MessageReqDto sys_msg = { .type = SYSTEM, .text = event, .timestamp = ts };
+		MessageReqDto sys_msg = { .type = SYSTEM, .text = event, .timestamp = timestamp };
 	    mq.push({fd, sys_msg});
 
 		join(fd);
-        LOG(_CB_ "[Join] User (fd: %d) joined channel %u at %lu" _EC_, fd, channel_id, ts);
+        LOG(_CB_ "[Join] User (fd: %d) joined channel %u at %lu" _EC_, fd, channel_id, timestamp);
 	} catch (const std::exception& e) {
         iERROR("Logging failed: %s", e.what());
     }
@@ -89,12 +98,7 @@ void Channel::on_req(const fd_t from, const char* target, Json& root) {
 				UReportDto dto;
 				dto.rejoin = new RejoinReqDto{ .channel_id = channel_id, .timestamp = timestamp };
 
-				MessageReqDto sys_msg = { .type = SYSTEM, .text = "leave", .timestamp = timestamp };
-	    		mq.push({fd, sys_msg});
-
-				leave(from);
-		
-				LOG(_CR_ "[Leave] User (fd: %d) left channel %u at %lu" _EC_, from, channel_id, timestamp);
+				leave_and_logging(from, timestamp);
 
 				server->report({ChannelServer::ChannelReport::JOIN, from, dto}); // Request switch channel
 			} __UNPACK_FAIL {

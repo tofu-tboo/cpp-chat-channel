@@ -32,7 +32,8 @@ class Channel: public ChatServer {
 		// Can be polluted by other threads but protecting by ConnectionTracker's mutex
         void leave(const fd_t fd);
         void join(const fd_t fd);
-		void join_and_logging(const fd_t fd, UJoinDto req, bool re = true);
+		void leave_and_logging(const fd_t fd, msec64 timestamp);
+		void join_and_logging(const fd_t fd, msec64 timestamp, bool re = true);
 
     protected: // Sequencially called in proc() => no needed mutex
         virtual void on_accept() override;

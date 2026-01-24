@@ -77,9 +77,7 @@ void ChannelServer::on_req(const fd_t from, const char* target, Json& root) {
 				JoinReqDto req = { .channel_id = channel_id, .timestamp = timestamp, .user_name = std::string(user_name) };
 				set_user_name(from, std::string(user_name)); // user_%d -> real user_name
 
-                UJoinDto u_req;
-                u_req.join = &req;
-                get_channel(channel_id)->join_and_logging(from, u_req, false);
+                get_channel(channel_id)->join_and_logging(from, timestamp, false);
 
                 con_tracker->delete_client(from);
             } __UNPACK_FAIL {
@@ -101,9 +99,8 @@ void ChannelServer::consume_report() {
 		case ChannelReport::JOIN:
 			{
 				ch_id_t channel_id = req.dto.rejoin->channel_id;
-				// msec64 timestamp = req.dto.rejoin->timestamp;
-				UJoinDto u_req = { .rejoin = req.dto.rejoin };
-				get_channel(channel_id)->join_and_logging(req.from, u_req, true);
+				msec64 timestamp = req.dto.rejoin->timestamp;
+				get_channel(channel_id)->join_and_logging(req.from, timestamp, true);
                 delete req.dto.rejoin; // Consumer takes responsibility for deletion
 			}
 			break;
