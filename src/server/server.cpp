@@ -1,7 +1,17 @@
 #include <cstring>
+#include <csignal>
 
 #include "../libs/util.h"
 #include "channel_server.h"
+
+ChannelServer* g_server = nullptr;
+
+void signal_handler(int signum) {
+    if (g_server) {
+        LOG("Signal %d received. Stopping server...", signum);
+        g_server->stop();
+    }
+}
 
 int main(int argc, char* argv[]) {
     // if one of argv's key is lobbyN or chN, parse the its value as max fd of ChannelServer
@@ -14,9 +24,14 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
+    signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
+
 	ChannelServer server(lobby_max_fd, ch_max_fd);
+    g_server = &server;
 
     server.proc();
 
+    g_server = nullptr;
     return 0;
 }

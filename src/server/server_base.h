@@ -20,6 +20,7 @@
 #include <chrono>
 #include <cstdint>
 #include <algorithm>
+#include <atomic>
 
 #include "../libs/util.h"
 #include "../libs/socket.h"
@@ -58,12 +59,14 @@ class ServerBase {
         std::unordered_set<fd_t> next_deletion;
 
         TaskRunner<void()> task_runner;
+        std::atomic<bool> is_running;
     public:
         ServerBase(const int max_fd = 256, const msec to = 0);
         ~ServerBase();
 
         virtual void proc(); // 외부에서의 서버 진입점
-		
+        void stop();
+
 
     private:
         void set_network();

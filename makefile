@@ -32,3 +32,6 @@ clean:
 
 check: debug
 	valgrind --leak-check=full --show-leak-kinds=all ./$(OUT_DIR)/server
+
+ngrok:
+	ngrok tcp 4800

@@ -2,7 +2,7 @@
 
 fd_t ServerBase::fd = -1;
 
-ServerBase::ServerBase(const int max_fd, const msec to): con_tracker(nullptr), comm(nullptr), timeout(to) {
+ServerBase::ServerBase(const int max_fd, const msec to): con_tracker(nullptr), comm(nullptr), timeout(to), is_running(true) {
     try {
         branch_id = static_cast<int>(std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count());
@@ -62,7 +62,7 @@ ServerBase::~ServerBase() {
 }
 
 void ServerBase::proc() {
-    while (1) {
+    while (is_running) {
         try {
             task_runner.run();
             // frame();
@@ -70,6 +70,10 @@ void ServerBase::proc() {
             iERROR("%s", e.what());
         }
     }
+}
+
+void ServerBase::stop() {
+    is_running = false;
 }
 
 #pragma region PRIVATE_FUNC
