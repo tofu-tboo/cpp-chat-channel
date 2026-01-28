@@ -69,3 +69,13 @@
 	message: string // server/channel full, etc.
 }
 ```
+
+## TODO:
+
+1. JWT 검증
+2. XSS 방지
+3. 누적 버퍼 제한
+4. 웹소켓 래퍼
+5. IP 당 연결 수 제한
+6. JSON depth 제한
+7. rate limit
