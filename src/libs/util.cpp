@@ -12,4 +12,6 @@ void frees(int num, ...) {
     va_end(ap);
 }
 
-// hash helpers are defined inline in util.h
+const coded_runtime_error* try_get_coded_error(const std::exception& e) {
+    return dynamic_cast<const coded_runtime_error*>(&e);
+}

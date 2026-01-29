@@ -32,7 +32,7 @@ std::vector<std::string> Communication::recv_frame(const fd_t fd) {
         try {
             len = std::stoul(acc.substr(0, 4), nullptr, 16);
         } catch (...) {
-            throw std::runtime_error("Invalid frame header.");
+            throw runtime_errorf("Invalid frame header from fd %d", fd);
         }
 
         if (len > MAX_FRAME_SIZE) {

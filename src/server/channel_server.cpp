@@ -61,15 +61,24 @@ void ChannelServer::resolve_deletion() {
 
 void ChannelServer::on_accept(const fd_t client) {
     try {
+        // UserManager::check_and_register_ip(client, 20);
+
         con_tracker->add_client(client);
 		UserManager::set_user_name(client, "user_" + std::to_string(client)); // temporary username assignment
 
 		last_act[client] = std::chrono::steady_clock::now();
 	} catch (const std::exception& e) {
-		if (dynamic_cast<const coded_runtime_error*>(&e) != nullptr) {
-			const coded_runtime_error& cre = static_cast<const coded_runtime_error&>(e);
-			if (cre.code == POOL_FULL) {
+		if (const auto* cre = try_get_coded_error(e)) {
+			switch (cre->code)
+			{
+			case POOL_FULL:
 				comm->send_frame(client, std::string(R"({"type":"error","message":"Server is full."})"));
+				break;
+			case IP_FULL:
+				comm->send_frame(client, std::string(R"({"type":"error","message":"Too many connections from your IP."})"));
+				break;
+			default:
+				break;
 			}
 		}
         iERROR("%s", e.what());

@@ -99,4 +99,5 @@ coded_runtime_error runtime_errorf(int code, const char* fmt, Args&&... args) {
     return coded_runtime_error(code, big.data());
 }
 
+const coded_runtime_error* try_get_coded_error(const std::exception& e);
 #endif

@@ -137,7 +137,7 @@ void Channel::resolve_pool() {
 		}
 	}
 
-	if (con_tracker->get_client_count() == 0 && join_pool.empty()) {
+	if (con_tracker->get_client_count() == 0) {
 		stop_flag.store(true);
 		empty_since.store(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
 	}

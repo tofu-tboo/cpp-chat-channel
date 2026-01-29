@@ -25,7 +25,7 @@ server: src/server/server.cpp src/server/server_base.cpp src/server/typed_frame_
 	g++ $(CXXFLAGS) -o $(OUT_DIR)/$@ $^ $(PACKAGES)
 
 libs: src/libs/util.cpp src/libs/json.cpp src/libs/connection_tracker.cpp src/libs/task_runner.tpp src/libs/communication.cpp
-	g++ -c $< -o $@ $(PACKAGES)
+	g++ -c $< -o $(OUT_DIR)/$@ $(PACKAGES)
 
 clean:
 	rm -f $(OUT_DIR)/client $(OUT_DIR)/server *.o

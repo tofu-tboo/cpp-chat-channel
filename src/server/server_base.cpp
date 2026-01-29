@@ -166,9 +166,8 @@ void ServerBase::on_accept(const fd_t client) {
 	try {
         con_tracker->add_client(client);
 	} catch (const std::exception& e) {
-		if (dynamic_cast<const coded_runtime_error*>(&e) != nullptr) {
-			const coded_runtime_error& cre = static_cast<const coded_runtime_error&>(e);
-			if (cre.code == POOL_FULL) {
+		if (const auto* cre = try_get_coded_error(e)) {
+			if (cre->code == POOL_FULL) {
 				comm->send_frame(client, std::string(R"({"type":"error","message":"Server is full."})"));
 			}
 		}
