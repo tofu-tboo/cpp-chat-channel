@@ -2,7 +2,7 @@
 #include "../libs/util.h"
 #include "user_manager.h"
 
-ChannelServer::ChannelServer(const int max_fd, const int ch_max_fd, const msec to): TypedFrameServer(max_fd, to), ch_max_fd(ch_max_fd) {
+ChannelServer::ChannelServer(const char* port, const int max_fd, const int ch_max_fd, const msec to): TypedFrameServer(port, max_fd, to), ch_max_fd(ch_max_fd) {
     // Periodically process switch requests from channels
     task_runner.pushb(TS_PRE, [this]() {
         consume_report();

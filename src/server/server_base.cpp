@@ -2,15 +2,18 @@
 
 fd_t ServerBase::fd = -1;
 
-ServerBase::ServerBase(const int max_fd, const msec to): con_tracker(nullptr), comm(nullptr), timeout(to), is_running(true) {
+ServerBase::ServerBase(const char* port, const int max_fd, const msec to): con_tracker(nullptr), comm(nullptr), timeout(to), is_running(true) {
     try {
         branch_id = static_cast<int>(std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count());
 
-        if (fd == FD_ERR)
-            set_network();
+        if (fd == FD_ERR) {
+			if (port == nullptr)
+				port = "4800\0\0";
+            set_network(port);
+		}
 
-        LOG(_CG_ "Server initialized on port 4800." _EC_);
+        LOG(_CG_ "Server initialized on port %s." _EC_, port);
 
         con_tracker = new ConnectionTracker(fd, max_fd);
         if (!con_tracker)
@@ -77,7 +80,7 @@ void ServerBase::stop() {
 }
 
 #pragma region PRIVATE_FUNC
-void ServerBase::set_network() {
+void ServerBase::set_network(const char* port) {
     if (fd != FD_ERR) {
         throw std::runtime_error("Sever descriptor is already assigned.");
     }
@@ -90,7 +93,7 @@ void ServerBase::set_network() {
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE;
 
-    status = getaddrinfo(NULL, "4800", &hints, &res);
+    status = getaddrinfo(NULL, port, &hints, &res);
     if (status != 0) {
         throw std::runtime_error("The getaddrinfo() is not resolved.");
     }

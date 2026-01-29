@@ -17,7 +17,7 @@ class ChatServer : public TypedFrameServer {
 		std::multimap<msec64, std::pair<fd_t, MessageReqDto>> cur_msgs; // timestamped messages
 		ProducerConsumerQueue<std::pair<fd_t, MessageReqDto>> mq; // message queue (raw JSON strings)
 	public:
-		ChatServer(const int max_fd = 32, const msec to = 0);
+		ChatServer(const char* port = nullptr, const int max_fd = 32, const msec to = 0);
 		~ChatServer();
 	protected:
 		virtual void resolve_deletion() override;

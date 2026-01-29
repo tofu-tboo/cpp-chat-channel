@@ -61,7 +61,7 @@ class ServerBase {
         TaskRunner<void()> task_runner;
         std::atomic<bool> is_running;
     public:
-        ServerBase(const int max_fd = 256, const msec to = 0);
+        ServerBase(const char* port = "4800\0\0", const int max_fd = 256, const msec to = 0);
         ~ServerBase();
 
         virtual void proc(); // 외부에서의 서버 진입점
@@ -69,7 +69,7 @@ class ServerBase {
 
 
     private:
-        void set_network();
+        virtual void set_network(const char* port);
         void handle_events(const pollev event);
     protected:
         // Tasks

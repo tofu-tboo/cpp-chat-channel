@@ -6,7 +6,7 @@
 
 class TypedFrameServer : public ServerBase {
 public:
-    TypedFrameServer(const int max_fd = 256, const msec to = 0);
+    TypedFrameServer(const char* port = nullptr, const int max_fd = 256, const msec to = 0);
     virtual ~TypedFrameServer() = default;
 
 protected:

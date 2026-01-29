@@ -28,7 +28,7 @@ class ChannelServer: public TypedFrameServer {
 
 		int ch_max_fd;
     public:
-        ChannelServer(const int max_fd = 256, const int ch_max_fd = 32, const msec to = 0);
+        ChannelServer(const char* port = nullptr, const int max_fd = 256, const int ch_max_fd = 32, const msec to = 0);
         ~ChannelServer();
         void report(const ChannelReport& req);
     protected:

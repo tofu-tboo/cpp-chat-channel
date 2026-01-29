@@ -2,7 +2,7 @@
 #include "channel_server.h"
 #include "user_manager.h"
 
-Channel::Channel(ChannelServer* srv, ch_id_t id, const int max_fd): ChatServer(max_fd, 100), channel_id(id), server(srv), paused(false) {
+Channel::Channel(ChannelServer* srv, ch_id_t id, const int max_fd): ChatServer(nullptr, max_fd, 100), channel_id(id), server(srv), paused(false) {
     stop_flag.store(false);
     worker = std::thread(&Channel::proc, this);
 
@@ -88,6 +88,7 @@ msec64 Channel::get_empty_since() const { return empty_since.load(); }
 bool Channel::is_stopped() const { return stop_flag.load(); }
 
 #pragma region PROTECTED_FUNC
+void Channel::set_network(const char* port) {}
 
 void Channel::on_accept(const fd_t client) {} // accept only occured in lobby(ChannelServer)
 void Channel::resolve_deletion() {

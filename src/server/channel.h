@@ -44,6 +44,8 @@ class Channel: public ChatServer {
 		bool is_stopped() const;
 
     protected: // Sequencially called in proc() => no needed mutex
+		virtual void set_network(const char* port);
+
 		virtual void resolve_deletion() override;
 		virtual void resolve_pool();
 

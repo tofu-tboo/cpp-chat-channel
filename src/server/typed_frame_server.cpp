@@ -1,6 +1,6 @@
 #include "typed_frame_server.h"
 
-TypedFrameServer::TypedFrameServer(const int max_fd, const msec to) : ServerBase(max_fd, to) {
+TypedFrameServer::TypedFrameServer(const char* port, const int max_fd, const msec to) : ServerBase(port, max_fd, to) {
 	#ifdef DEBUG
 	task_runner.pushf(TS_LOGIC, AsThrottle([this]() {
 		auto clients = con_tracker->get_clients();
