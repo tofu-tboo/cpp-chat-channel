@@ -1,10 +1,6 @@
 #include <netdb.h>
-#include <poll.h>
-#include <sys/socket.h>
-#include <sys/types.h>
 #include <unistd.h>
 #include <termios.h>
-#include <sys/ioctl.h>
 #include <cerrno>
 
 #include <cstring>
@@ -15,6 +11,7 @@
 #include <jansson.h>
 
 #include "../libs/util.h"
+#include "../libs/socket.h"
 
 static std::string g_input_buffer;
 static std::string g_user_name;

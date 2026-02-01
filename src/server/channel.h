@@ -24,7 +24,7 @@ class Channel: public ChatServer {
 		std::atomic<bool> paused;
 		std::atomic<msec64> empty_since{0};
     public:
-        Channel(ChannelServer* srv, ch_id_t id, const int max_fd = 256);
+        Channel(NetworkService<User>* service, ChannelServer* srv, ch_id_t id, const int max_fd = 256);
         ~Channel();
 
         virtual void proc() override;

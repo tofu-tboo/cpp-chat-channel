@@ -78,3 +78,8 @@
 4. 웹소켓 래퍼
 5. JSON depth 제한
 6. rate limit
+7. thread pool / kqueue
+8. props drilling => DI
+9. 네트워크 단절 방지 => ping-pong
+10. .h, .cpp 의존성 분리
+11. .h에서 선언만 이용

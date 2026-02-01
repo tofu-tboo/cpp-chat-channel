@@ -1,8 +1,11 @@
 #include <cstring>
 #include <csignal>
+#include <cstdlib>
 
 #include "../libs/util.h"
+#include "server_factory.h"
 #include "channel_server.h"
+#include "../libs/network_service.h"
 
 ChannelServer* g_server = nullptr;
 
@@ -16,25 +19,25 @@ void signal_handler(int signum) {
 int main(int argc, char* argv[]) {
     // if one of argv's key is lobbyN or chN, parse the its value as max fd of ChannelServer
 	int lobby_max_fd = 32, ch_max_fd = 32;
-	char port[6] = "\0";
+	const char* env_p = std::getenv("PORT");
+	int port = env_p != nullptr ? atoi(env_p) : 4800;
 	for (int i = 1; i < argc; i++) {
 		if (strncmp(argv[i], "lobbyN=", 7) == 0) {
 			lobby_max_fd = atoi(argv[i] + 7);
 		} else if (strncmp(argv[i], "chN=", 4) == 0) {
 			ch_max_fd = atoi(argv[i] + 4);
 		} else if (strncmp(argv[i], "port=", 5) == 0) {
-			strncpy(port, argv[i] + 5, 5);
-			port[5] = 0;
+			port = atoi(argv[i] + 5);
 		}
 	}
 
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
-	ChannelServer server(port, lobby_max_fd, ch_max_fd);
-    g_server = &server;
+	NetworkService<User> service(port);
+	g_server = ServerFactory::create<ChannelServer>(&service, lobby_max_fd, ch_max_fd);
 
-    server.proc();
+    g_server->proc();
 
     g_server = nullptr;
     return 0;

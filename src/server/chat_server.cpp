@@ -4,7 +4,7 @@
 #include "user_manager.h"
 
 
-ChatServer::ChatServer(const char* port, const int max_fd, const msec to): TypedFrameServer(port, max_fd, to) {
+ChatServer::ChatServer(NetworkService<User>* service, const int max_fd, const msec to): TypedFrameServer(service, max_fd, to) {
 	task_runner.pushb(TS_PRE, [this]() {
 		cur_msgs.clear();
 	});

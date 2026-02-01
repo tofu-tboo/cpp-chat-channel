@@ -7,12 +7,14 @@
 #include <unordered_set>
 #include <sys/epoll.h>
 #include <mutex>
+// #include <libwebsockets.h>
 
 #include "util.h"
 #include "socket.h"
 
+
 class ConnectionTracker {
-    private:
+	private:
         int max_fd;
         fd_t& listener_fd;
         fd_t efd;
@@ -21,11 +23,15 @@ class ConnectionTracker {
         int evcnt;
         mutable std::mutex mtx;
 
+		// ctx* context = nullptr;
+		// ctx_creation_info info;
+		// protocols_t protocols[];
     public:
         ConnectionTracker(fd_t& fd, const int max_fd = 256);
         ~ConnectionTracker();
 
         void init();
+        // void init(const int port, const size_t s_user_sz);
 
         void polling(const msec to);
 
@@ -38,6 +44,10 @@ class ConnectionTracker {
 		bool is_full() const;
 		int get_max_fd() const;
 		size_t get_client_count() const;
+
+		// int callback_logic(lws* wsi, reason reason, void* user, void* in, size_t len);
+
+		// ctx* get_context();
 };
 
 #endif

@@ -1,5 +1,4 @@
 #include <cstdio>
-#include <sys/socket.h>
 #include <cerrno>
 
 #include "communication.h"

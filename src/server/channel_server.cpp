@@ -2,7 +2,7 @@
 #include "../libs/util.h"
 #include "user_manager.h"
 
-ChannelServer::ChannelServer(const char* port, const int max_fd, const int ch_max_fd, const msec to): TypedFrameServer(port, max_fd, to), ch_max_fd(ch_max_fd) {
+ChannelServer::ChannelServer(NetworkService<User>* service, const int max_fd, const int ch_max_fd, const msec to): TypedFrameServer(service, max_fd, to), ch_max_fd(ch_max_fd) {
     // Periodically process switch requests from channels
     task_runner.pushb(TS_PRE, [this]() {
         consume_report();
@@ -154,7 +154,7 @@ void ChannelServer::consume_report() {
 #pragma region PRIVATE_FUNC
 Channel* ChannelServer::get_channel(const ch_id_t channel_id) {
 	if (channels.find(channel_id) == channels.end()) {
-		Channel* channel = new Channel(this, channel_id, ch_max_fd);
+		Channel* channel = new Channel(service, this, channel_id, ch_max_fd);
 		channels[channel_id] = channel;
 		LOG(_CG_ "Channel %u created." _EC_, channel_id);
 	}

@@ -1,5 +1,4 @@
 #include <arpa/inet.h>
-#include <sys/socket.h>
 #include "user_manager.h"
 
 std::unordered_map<fd_t, std::string> UserManager::name_map;

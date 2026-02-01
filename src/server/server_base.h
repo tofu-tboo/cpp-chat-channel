@@ -8,25 +8,24 @@
 #include <map>
 #include <string>
 #include <deque>
+#include <queue>
 #include <functional>
 #include <stdexcept>
 #include <mutex>
 #include <shared_mutex>
 #include <cstring>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <netdb.h>
-#include <unistd.h>
 #include <chrono>
 #include <cstdint>
 #include <algorithm>
 #include <atomic>
 
 #include "../libs/util.h"
+#include "../libs/dto.h"
 #include "../libs/socket.h"
 #include "../libs/connection_tracker.h"
 #include "../libs/task_runner.h"
 #include "../libs/communication.h"
+#include "../libs/network_service.h"
 
 /*
 All servers have only one shared file descriptor listening on a port.
@@ -39,13 +38,16 @@ ServerBase assumed that it has one channel.
 - Separate Tasks: Use TaskRunner to separate tasks like polling, deletion resolution, payload resolution. But, ServerBase only does polling and deletion resolution. The payload resolution is left to derived classes. 
 */
 
-class ServerBase {
+class ServerFactory;
+
+template <typename U>
+class ServerBase: public SessionEvHandler<U> {
     protected:
         static fd_t fd;
     protected:
-        int branch_id; // manager branch's id
+        int branch_id; // branch's id
         ConnectionTracker* con_tracker;
-		Communication* comm;
+		NetworkService<U>* service;
 
         enum TaskSession {
             TS_PRE = 0,   // 전처리: 큐 소비, 버퍼 정리
@@ -61,26 +63,29 @@ class ServerBase {
         TaskRunner<void()> task_runner;
         std::atomic<bool> is_running;
     public:
-        ServerBase(const char* port = "4800\0\0", const int max_fd = 256, const msec to = 0);
+        ServerBase(NetworkService<U>* di_service, const int max_fd = 256, const msec to = 0);
         ~ServerBase();
 
         virtual void proc(); // 외부에서의 서버 진입점
         void stop();
 
-
-    private:
-        virtual void set_network(const char* port);
-        void handle_events(const pollev event);
+        // virtual void report(const ChannelReport& req);
     protected:
+		virtual void init();
+
         // Tasks
-        // virtual void frame();
         virtual void resolve_deletion();
 
-        // Hooks
-        virtual void on_frame(const fd_t from, const std::string& frame);
-        virtual void on_accept(const fd_t client);
-		virtual void on_disconnect(const fd_t fd);
-		virtual void on_recv(const fd_t from);
+		virtual void on_frame(const U& user, const std::string& frame) = 0;
+        virtual void on_accept(const U& user, const Connection& connection);
+		virtual void on_close(const U& user, const Connection& connection);
+		virtual void on_recv(const U& user, const Connection& connection, const RecvStream& stream);
+		virtual void on_send(const U& user, const Connection& connection);
+		// virtual User translate(LwsCallbackParam&& param);
+	
+		friend class ServerFactory;
 };
+
+#include "server_base.tpp"
 
 #endif

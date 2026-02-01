@@ -2,9 +2,27 @@
 #include <unistd.h>
 #include "connection_tracker.h"
 
-ConnectionTracker::ConnectionTracker(fd_t& fd, const int max_fd): efd(FD_ERR), listener_fd(fd), max_fd(max_fd) {}
+ConnectionTracker::ConnectionTracker(fd_t& fd, const int max_fd): efd(FD_ERR), listener_fd(fd), max_fd(max_fd) {
+	// memset(&info, 0, sizeof(info));
+	// protocols = {
+	// 	{
+	// 		"tcp",
+	// 		callback_raw_tcp,
+	// 		sizeof(RawSessionData),
+	// 		2048,
+	// 	},
+	// 	{
+	// 		"ws",
+	// 		callback_websocket,
+	// 		sizeof(WsSessionData),
+	// 		2048,
+	// 	},
+	// 	{ NULL, NULL, 0, 0 }
+	// };
+}
 
 ConnectionTracker::~ConnectionTracker() {
+	// lws_context_destroy(context);
     if (efd != FD_ERR) { // cleanup epoll clients
         for (fd_t client_fd : clients) {
             epoll_ctl(efd, EPOLL_CTL_DEL, client_fd, nullptr);
@@ -25,6 +43,8 @@ ConnectionTracker::~ConnectionTracker() {
 }
 
 void ConnectionTracker::init() {
+	
+
     if ((efd = epoll_create1(0)) == FD_ERR) {
         throw std::runtime_error("Failed to create epoll instance.");
     }
@@ -36,6 +56,20 @@ void ConnectionTracker::init() {
     }
 
 }
+
+// void ConnectionTracker::init(const int port, const size_t s_user_sz) {
+// 	protocols = {
+		
+// 	}
+	
+// 	info.port = port;
+//     info.protocols = protocols;
+//     // info.user = this;
+// 	// 웹소켓 형식이 아닌 패킷이 들어오면 첫 번째 프로토콜(raw-tcp)로 처리하게 함
+// 	info.options = LWS_SERVER_OPTION_FALLBACK_TO_RAW;
+//     context = lws_create_context(&info);
+//     if (!context) throw runtime_errorf("Failed to create context.");
+// }
 
 void ConnectionTracker::polling(const msec to) {
     if (FAILED(evcnt = epoll_wait(efd, events, MAX_PEV, to))) {
@@ -106,3 +140,7 @@ size_t ConnectionTracker::get_client_count() const {
 	std::lock_guard<std::mutex> lock(mtx);
 	return clients.size();
 }
+
+// ctx* ConnectionTracker::get_context() {
+// 	return context;
+// }

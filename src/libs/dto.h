@@ -4,6 +4,7 @@
 #include <string>
 
 #include "socket.h"
+#include "util.h"
 
 typedef unsigned int ch_id_t;
 
@@ -31,4 +32,12 @@ typedef union {
 	JoinReqDto* join;
 	// etc...
 } UReportDto;
+
+typedef struct {
+	ch_id_t ch;
+	uint64_t uid;
+	msec64 join_t;
+	char* name; // needed to free
+} User;
+
 #endif

@@ -1,6 +1,6 @@
 #include "typed_frame_server.h"
 
-TypedFrameServer::TypedFrameServer(const char* port, const int max_fd, const msec to) : ServerBase(port, max_fd, to) {
+TypedFrameServer::TypedFrameServer(NetworkService<User>* service, const int max_fd, const msec to) : JsonFrameServer<User>(service, max_fd, to) {
 	#ifdef DEBUG
 	task_runner.pushf(TS_LOGIC, AsThrottle([this]() {
 		auto clients = con_tracker->get_clients();
@@ -13,13 +13,7 @@ TypedFrameServer::TypedFrameServer(const char* port, const int max_fd, const mse
 	#endif
 }
 
-void TypedFrameServer::on_frame(const fd_t from, const std::string& frame) {
-    json_error_t err;
-    Json root(json_loads(frame.c_str(), 0, &err));
-    if (root.get() == nullptr) {
-        iERROR("Failed to parse JSON: %s", err.text);
-        return;
-    }
+void TypedFrameServer::on_json(const fd_t from, const User& user, Json& root) {
     const char* type;
     __UNPACK_JSON(root, "{s:s}", "type", &type) {
         on_req(from, type, root);

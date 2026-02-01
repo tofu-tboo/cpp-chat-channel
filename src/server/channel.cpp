@@ -2,7 +2,7 @@
 #include "channel_server.h"
 #include "user_manager.h"
 
-Channel::Channel(ChannelServer* srv, ch_id_t id, const int max_fd): ChatServer(nullptr, max_fd, 100), channel_id(id), server(srv), paused(false) {
+Channel::Channel(NetworkService<User>* service, ChannelServer* srv, ch_id_t id, const int max_fd): ChatServer(service, max_fd, 100), channel_id(id), server(srv), paused(false) {
     stop_flag.store(false);
     worker = std::thread(&Channel::proc, this);
 

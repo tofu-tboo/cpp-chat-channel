@@ -21,10 +21,10 @@ client: src/client/client.cpp | $(OUT_DIR)
 client_win: src/client/client_win.cpp src/libs/util.cpp | $(OUT_DIR)
 	$(CXX_WIN) $(CXXFLAGS) -o $(OUT_DIR)/client.exe $^ -lws2_32 -static
 
-server: src/server/server.cpp src/server/server_base.cpp src/server/typed_frame_server.cpp src/server/channel_server.cpp src/server/chat_server.cpp src/server/channel.cpp src/server/user_manager.cpp src/libs/util.cpp src/libs/json.cpp src/libs/connection_tracker.cpp src/libs/communication.cpp | $(OUT_DIR)
+server: src/server/server.cpp src/server/typed_frame_server.cpp src/server/channel_server.cpp src/server/chat_server.cpp src/server/channel.cpp src/server/user_manager.cpp src/libs/util.cpp src/libs/json.cpp src/libs/connection_tracker.cpp src/libs/communication.cpp | $(OUT_DIR)
 	g++ $(CXXFLAGS) -o $(OUT_DIR)/$@ $^ $(PACKAGES)
 
-libs: src/libs/util.cpp src/libs/json.cpp src/libs/connection_tracker.cpp src/libs/task_runner.tpp src/libs/communication.cpp
+libs: src/libs/util.cpp src/libs/json.cpp src/libs/connection_tracker.cpp src/libs/task_runner.tpp src/libs/communication.cpp src/libs/network_service.tpp
 	g++ -c $< -o $(OUT_DIR)/$@ $(PACKAGES)
 
 clean:
