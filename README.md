@@ -75,11 +75,11 @@
 1. JWT 검증
 2. XSS 방지
 3. 누적 버퍼 제한
-4. 웹소켓 래퍼
-5. JSON depth 제한
-6. rate limit
-7. thread pool / kqueue
-8. props drilling => DI
-9. 네트워크 단절 방지 => ping-pong
-10. .h, .cpp 의존성 분리
-11. .h에서 선언만 이용
+4. JSON depth 제한
+5. rate limit
+6. thread pool / kqueue
+7. props drilling => DI
+8. 네트워크 단절 방지 => ping-pong
+9. .h, .cpp 의존성 분리
+10. .h에서 선언만 이용
+11. logger

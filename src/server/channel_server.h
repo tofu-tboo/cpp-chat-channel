@@ -1,7 +1,7 @@
 #ifndef __CHANNEL_SERVER_H__
 #define __CHANNEL_SERVER_H__
 
-#include "typed_frame_server.h"
+#include "typed_json_frame_server.h"
 #include "chat_server.h"
 #include "channel.h"
 #include "../libs/json.h"
@@ -13,29 +13,29 @@
 
 */
 
-class ChannelServer: public TypedFrameServer {
+class ChannelServer: public TypedJsonFrameServer<User> {
     public:
         struct ChannelReport {
 			enum { JOIN } type;
-            fd_t from;
+            User* from;
 			UReportDto dto;
         };
     private:
         std::unordered_map<ch_id_t, Channel*> channels;
 		ProducerConsumerQueue<ChannelReport> reports;
         std::mutex report_mtx;
-		std::unordered_map<fd_t, std::chrono::steady_clock::time_point> last_act;
+		std::unordered_map<User*, std::chrono::steady_clock::time_point> last_act;
 
 		int ch_max_fd;
     public:
-        ChannelServer(NetworkService<User>* service, const int max_fd = 256, const int ch_max_fd = 32, const msec to = 0);
+        ChannelServer(NetworkService<User>* service, const int max_fd = 256, const int ch_max_fd = 32, const msec to = 1000);
         ~ChannelServer();
         void report(const ChannelReport& req);
     protected:
 		virtual void resolve_deletion() override;
 
-		virtual void on_accept(const fd_t client) override;
-        virtual void on_req(const fd_t from, const char* target, Json& root) override;
+		virtual void on_accept(User& client) override;
+        virtual void on_req(const User& from, const char* target, Json& root) override;
 		void consume_report();
 	private:
 		Channel* get_channel(const ch_id_t channel_id);

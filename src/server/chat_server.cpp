@@ -4,7 +4,7 @@
 #include "user_manager.h"
 
 
-ChatServer::ChatServer(NetworkService<User>* service, const int max_fd, const msec to): TypedFrameServer(service, max_fd, to) {
+ChatServer::ChatServer(NetworkService<User>* service, const int max_fd, const msec to): TypedJsonFrameServer(service, max_fd, to) {
 	task_runner.pushb(TS_PRE, [this]() {
 		cur_msgs.clear();
 	});
@@ -21,27 +21,22 @@ ChatServer::~ChatServer() {
 
 #pragma region PROTECTED_FUNC
 void ChatServer::resolve_deletion() {
-	if (!con_tracker) return;
-    for (const fd_t fd : next_deletion) {
-		try {
-        	con_tracker->delete_client(fd);
-		} catch (...) {
-			continue;
-		}
-		UserManager::remove_user_name(fd);
-        close(fd);
-		comm->clear_buffer(fd);
-        LOG("Normally Disconnected: fd %d", fd);
+    for (User* user : next_deletion) {
+		if (user->name) free(user->name);
+		user->name = nullptr;
+        service->close_async(user, "Server closed.");
+        LOG("Normally Disconnected: user %p", user);
     }
+    next_deletion.clear();
 }
 
 void ChatServer::resolve_timestamps() {
-    std::queue<std::pair<fd_t, MessageReqDto>> local_q = mq.pop_all();
+    std::queue<std::pair<User*, MessageReqDto>> local_q = mq.pop_all();
 	while (!local_q.empty()) {
-        std::pair<fd_t, MessageReqDto> item = std::move(local_q.front());
+        std::pair<User*, MessageReqDto> item = std::move(local_q.front());
         local_q.pop();
 
-		cur_msgs.emplace(item.second.timestamp, std::pair<fd_t, MessageReqDto>(item.first, item.second));
+		cur_msgs.emplace(item.second.timestamp, std::pair<User*, MessageReqDto>(item.first, item.second));
 	}
 }
 
@@ -82,6 +77,7 @@ void ChatServer::resolve_broadcast() {
     }
     CharDump dumped(json_dumps(cur_window.get(), 0));
     if (dumped) {
+		// TODO
 		if (!comm || !con_tracker) return;
 		std::vector<fd_t> failed_fds = comm->broadcast(con_tracker->get_clients(), dumped.get());
 		for (const fd_t& fd : failed_fds) {
@@ -90,7 +86,7 @@ void ChatServer::resolve_broadcast() {
     }
 }
 
-void ChatServer::on_req(const fd_t from, const char* target, Json& root) {
+void ChatServer::on_req(const User& from, const char* target, Json& root) {
 	switch (hash(target))
 	{
 	case hash("message"):
@@ -100,11 +96,11 @@ void ChatServer::on_req(const fd_t from, const char* target, Json& root) {
 		msec64 timestamp;
 		__UNPACK_JSON(root, "{s:s,s:I}", "text", &text, "timestamp", &timestamp) {
 			std::string user_name;
-			if (!UserManager::get_user_name(from, user_name)) {
-				return;
-			}
+			if (from.name) user_name = from.name;
+			else user_name = "unknown";
+
 			MessageReqDto msg_req = { .type = USER, .text = std::string(text), .timestamp = timestamp, .user_name = user_name };
-			mq.push({from, msg_req});
+			mq.push({const_cast<User*>(&from), msg_req});
 		} __UNPACK_FAIL {
 			iERROR("Malformed JSON message, missing timestamp or text.");
 			return;

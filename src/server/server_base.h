@@ -22,9 +22,7 @@
 #include "../libs/util.h"
 #include "../libs/dto.h"
 #include "../libs/socket.h"
-#include "../libs/connection_tracker.h"
 #include "../libs/task_runner.h"
-#include "../libs/communication.h"
 #include "../libs/network_service.h"
 
 /*
@@ -40,13 +38,17 @@ ServerBase assumed that it has one channel.
 
 class ServerFactory;
 
+// template <typename U>
+// typedef struct {
+// 	NetworkService<U>* di_service;
+// 	const int max_fd = 256;
+// 	const msec to = 1000;
+// } Server;
+
 template <typename U>
 class ServerBase: public SessionEvHandler<U> {
     protected:
-        static fd_t fd;
-    protected:
         int branch_id; // branch's id
-        ConnectionTracker* con_tracker;
 		NetworkService<U>* service;
 
         enum TaskSession {
@@ -58,12 +60,12 @@ class ServerBase: public SessionEvHandler<U> {
 
         msec timeout;
 
-        std::unordered_set<fd_t> next_deletion;
+        std::unordered_set<U*> next_deletion;
 
         TaskRunner<void()> task_runner;
         std::atomic<bool> is_running;
     public:
-        ServerBase(NetworkService<U>* di_service, const int max_fd = 256, const msec to = 0);
+        ServerBase(NetworkService<U>* di_service, const int max_fd = 256, const msec to = 1000);
         ~ServerBase();
 
         virtual void proc(); // 외부에서의 서버 진입점
@@ -77,10 +79,10 @@ class ServerBase: public SessionEvHandler<U> {
         virtual void resolve_deletion();
 
 		virtual void on_frame(const U& user, const std::string& frame) = 0;
-        virtual void on_accept(const U& user, const Connection& connection);
-		virtual void on_close(const U& user, const Connection& connection);
-		virtual void on_recv(const U& user, const Connection& connection, const RecvStream& stream);
-		virtual void on_send(const U& user, const Connection& connection);
+        virtual void on_accept(U& user);
+		virtual void on_close(U& user);
+		virtual void on_recv(U& user, const RecvStream& stream);
+		virtual void on_send(U& user);
 		// virtual User translate(LwsCallbackParam&& param);
 	
 		friend class ServerFactory;

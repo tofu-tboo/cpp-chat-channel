@@ -1,18 +1,10 @@
 #include "server_base.h"
 
 template <typename U>
-fd_t ServerBase<U>::fd = -1;
-
-template <typename U>
-ServerBase<U>::ServerBase(NetworkService<U>* di_service, const int max_fd, const msec to): con_tracker(nullptr), service(di_service), timeout(to), is_running(true) {
+ServerBase<U>::ServerBase(NetworkService<U>* di_service, const int max_fd, const msec to): service(di_service), timeout(to), is_running(true) {
     try {
         branch_id = static_cast<int>(std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count());
-
-        // con_tracker = new ConnectionTracker(fd, max_fd);
-        // if (!con_tracker)
-        //     throw std::runtime_error("Failed to allocate Connection Tracker.");
-        // con_tracker->init();
 
 		if (!di_service)
 			throw std::runtime_error("Network Service NullPtr.");
@@ -45,14 +37,6 @@ void ServerBase<U>::init() {
 
 template <typename U>
 ServerBase<U>::~ServerBase() {
-    if (con_tracker)
-        delete con_tracker;
-	
-    if (fd != FD_ERR) { // close listening socket
-        close(fd);
-        fd = FD_ERR;
-    }
-
     next_deletion.clear();
 }
 
@@ -81,34 +65,26 @@ void ServerBase<U>::stop() {
 
 template <typename U>
 void ServerBase<U>::resolve_deletion() {
-	if (!con_tracker) return;
-    for (const fd_t fd : next_deletion) {
-		try {
-        	con_tracker->delete_client(fd);
-		} catch (...) {
-			continue;
-		}
-        close(fd);
-
-		LOG("Normally Disconnected: fd %d", fd);
+    for (U* user : next_deletion) {
+        service->close_async(user, "Server closed connection.");
+		LOG("Normally Disconnected: user %p", user);
     }
+    next_deletion.clear();
 }
 
 template <typename U>
-void ServerBase<U>::on_accept(const U& user, const Connection& connection) {
-    fd_t client = lws_get_socket_fd(connection.wsi);
+void ServerBase<U>::on_accept(U& user) {
 	try {
-        if (con_tracker) con_tracker->add_client(client);
-		LOG("Accepted new connection: fd %d", client);
+		LOG("Accepted new connection: user %p", &user);
 
 	} catch (const std::exception& e) {
 		if (const auto* cre = try_get_coded_error(e)) {
 			if (cre->code == POOL_FULL) {
-				service->send(connection.wsi, std::string(R"({"type":"error","message":"Server is full."})"));
+				service->send_async(&user, std::string(R"({"type":"error","message":"Server is full."})"));
 			}
 		}
         iERROR("%s", e.what());
-        next_deletion.insert(client);
+        next_deletion.insert(&user);
 		return;
     }
 
@@ -119,18 +95,17 @@ void ServerBase<U>::on_accept(const U& user, const Connection& connection) {
 // }
 
 template <typename U>
-void ServerBase<U>::on_recv(const U& user, const Connection& connection, const RecvStream& stream) {
-    fd_t from = lws_get_socket_fd(connection.wsi);
+void ServerBase<U>::on_recv(U& user, const RecvStream& stream) {
 	try {
         on_frame(user, std::string(reinterpret_cast<const char*>(stream.data), stream.len));
     } catch (const std::exception& e) {
         iERROR("%s", e.what());
-        next_deletion.insert(from);
+        next_deletion.insert(&user);
     }
 }
 
 template <typename U>
-void ServerBase<U>::on_send(const U& user, const Connection& connection) {}
+void ServerBase<U>::on_send(U& user) {}
 
 // User ServerBase<U>::translate(LwsCallbackParam&& param) {
 	

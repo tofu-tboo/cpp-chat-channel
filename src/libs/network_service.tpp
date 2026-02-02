@@ -22,7 +22,12 @@ protocols_t NetworkService<T>::protocols[] = {
 template <typename T>
 NetworkService<T>::NetworkService(const int port): context(nullptr) {
 	memset(&info, 0, sizeof(info));
-	ctx_port = port;
+	info.port = port;
+	info.protocols = NetworkService<T>::protocols;
+	info.options = LWS_SERVER_OPTION_FALLBACK_TO_RAW; // TCP & WS compatibility
+	info.timeout_secs = 15; // WS handshake timeout
+	// info.fd_limit_per_thread = int;
+	info.count_threads = 8; // TODO
 }
 
 
@@ -38,10 +43,8 @@ NetworkService<T>::~NetworkService() {
 template <typename T>
 void NetworkService<T>::setup(SessionEvHandler<T>* i_handler) {
 	if (context) throw runtime_errorf("Context is already initialized.");
-	info.port = ctx_port;
-	info.protocols = NetworkService<T>::protocols;
 	info.user = i_handler;
-	info.options = LWS_SERVER_OPTION_FALLBACK_TO_RAW;
+	
 	context = lws_create_context(&info);
 	if (!context) throw runtime_errorf("Failed to create context.");
 }
@@ -57,12 +60,19 @@ void NetworkService<T>::serve(const msec to) {
 // }
 
 template <typename T>
-void NetworkService<T>::send(lws* wsi, const std::string& msg) {
-    send(wsi, reinterpret_cast<const unsigned char*>(msg.c_str()), msg.size());
+lws* NetworkService<T>::get_wsi(T* user) {
+	std::shared_lock<std::shared_mutex> lock(umap_mtx);
+	auto it = user_map.find(user);
+	if (it == user_map.end()) return nullptr;
+	return it->second;
+}
+template <typename T>
+void NetworkService<T>::send_async(lws* wsi, const std::string& msg) {
+    send_async(wsi, reinterpret_cast<const unsigned char*>(msg.c_str()), msg.size());
 }
 
 template <typename T>
-void NetworkService<T>::send(lws* wsi, const unsigned char* data, size_t len) {
+void NetworkService<T>::send_async(lws* wsi, const unsigned char* data, size_t len) {
 	accumulate(wsi, data, len);
 
     lws_callback_on_writable(wsi);
@@ -70,17 +80,55 @@ void NetworkService<T>::send(lws* wsi, const unsigned char* data, size_t len) {
 }
 
 template <typename T>
-void NetworkService<T>::broadcast(std::string& msg) {
-	broadcast(reinterpret_cast<const unsigned char*>(msg.c_str()), msg.size());
+void NetworkService<T>::send_async(T* user, const std::string& msg) {
+	lws* wsi = get_wsi(user);
+	if (wsi) send_async(wsi, msg);
 }
 
 template <typename T>
-void NetworkService<T>::broadcast(const unsigned char* data, size_t len) {
+void NetworkService<T>::send_async(T* user, const unsigned char* data, size_t len) {
+	lws* wsi = get_wsi(user);
+	if (wsi) send_async(wsi, data, len);
+}
+
+template <typename T>
+void NetworkService<T>::broadcast_async(std::string& msg) {
+	broadcast_async(reinterpret_cast<const unsigned char*>(msg.c_str()), msg.size());
+}
+
+template <typename T>
+void NetworkService<T>::broadcast_async(const unsigned char* data, size_t len) {
     for (auto wsi : this->session_inst) {
 		accumulate(wsi, data, len);
         lws_callback_on_writable(wsi);
     }
     lws_cancel_service(context);
+}
+
+template <typename T>
+void NetworkService<T>::close_async(lws* wsi, const std::string& msg) {
+	std::unique_lock<std::shared_mutex> lock(del_resv_mtx);
+	del_resv.insert({wsi, msg});
+	lws_cancel_service(context);
+}
+
+template <typename T>
+void NetworkService<T>::close_async(lws* wsi, const unsigned char* data, size_t len) {
+	std::unique_lock<std::shared_mutex> lock(del_resv_mtx);
+	del_resv.insert({wsi, std::string(reinterpret_cast<const char*>(data), len)});
+	lws_cancel_service(context);
+}
+
+template <typename T>
+void NetworkService<T>::close_async(T* user, const std::string& msg) {
+	lws* wsi = get_wsi(user);
+	if (wsi) close_async(wsi, msg);
+}
+
+template <typename T>
+void NetworkService<T>::close_async(T* user, const unsigned char* data, size_t len) {
+	lws* wsi = get_wsi(user);
+	if (wsi) close_async(wsi, data, len);
 }
 #pragma region PRIVATE_FUNC
 template <typename T>
@@ -102,91 +150,138 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 	typename NetworkService<T>::Session* ses = static_cast<typename NetworkService<T>::Session*>(session);
 	SessionEvHandler<T>* handler;
 	decltype(LwsCallbackParam::event) event = LwsCallbackParam::NONE;
-	NetworkService* instance = static_cast<NetworkService*>(lws_context_user(lws_get_context(wsi)));
+	NetworkService<T>* instance = static_cast<NetworkService<T>*>(lws_context_user(lws_get_context(wsi)));
 
 	switch (reason) {
 		case LWS_CALLBACK_ESTABLISHED:
 		case LWS_CALLBACK_RAW_ADOPT:
-			{
-				event = LwsCallbackParam::ACPT;
+		{
+			event = LwsCallbackParam::ACPT;
 
-				switch (hash(lws_get_protocol(wsi)->name)) {
-					case hash(WS_NAME):
-						ses->prot_id = WS;
-						break;
-					case hash(TCP_NAME):
-						ses->prot_id = TCP;
-						break;
-				}
-				ses->handler = static_cast<SessionEvHandler<T>*>(lws_context_user(lws_get_context(wsi)));
-				ses->buf = new std::queue<std::vector<unsigned char>>();
-            	ses->mtx = new std::mutex();
-
-				std::unique_lock<std::shared_mutex> lock(instance->mtx);
-				instance->session_inst.insert(wsi);
+			switch (hash(lws_get_protocol(wsi)->name)) {
+				case hash(WS_NAME):
+					ses->prot_id = WS;
+					break;
+				case hash(TCP_NAME):
+					ses->prot_id = TCP;
+					break;
 			}
+			ses->handler = static_cast<SessionEvHandler<T>*>(lws_context_user(lws_get_context(wsi)));
+			ses->buf = new std::queue<std::vector<unsigned char>>();
+            ses->mtx = new std::mutex();
+
+			LOG(_CG_"NetworkService [%14p]"_EC_" / "_CB_"[%14p] A Session is initialized."_EC_, (void*)instance, (void*)wsi);
+
+			std::unique_lock<std::shared_mutex> lock(instance->ses_inst_mtx);
+			instance->session_inst.insert(wsi);
+			std::unique_lock<std::shared_mutex> lock(instance->umap_mtx);
+			instance->user_map[&ses->user] = wsi;
 			break;
+		}
 		case LWS_CALLBACK_RECEIVE:
 		case LWS_CALLBACK_RAW_RX:
 			event = LwsCallbackParam::RECV;
 			break;
 		case LWS_CALLBACK_SERVER_WRITEABLE:
         case LWS_CALLBACK_RAW_WRITEABLE:
-			{
-				if (ses && !ses->buf->empty()) {
-					event = LwsCallbackParam::SEND;
+		{
+			if (ses && !ses->buf->empty()) {
+				event = LwsCallbackParam::SEND;
+			
+				if (lws_partial_buffered(wsi)) {
+					lws_callback_on_writable(wsi);
+					LOG(_CG_"NetworkService [%14p]"_EC_" / "_CY_"[%14x] Unsent data exist."_EC_, (void*)instance, (void*)wsi);
+					break;
+				}
+				std::vector<unsigned char> packet;
+				{
+					std::lock_guard<std::mutex> lock(*ses->mtx);
+					packet = std::move(ses->buf->front());
+					ses->buf->pop();
+				}
 				
-					if (lws_partial_buffered(wsi)) {
-						lws_callback_on_writable(wsi);
+				int n;
+				lws_write_protocol flag;
+				switch (ses->prot_id) {
+					case WS:
+						flag = LWS_WRITE_TEXT;
 						break;
-					}
+					case TCP:
+						flag = LWS_WRITE_RAW;
+						break;
+					default:
+						return -1;
+				}
 
-					std::vector<unsigned char> packet;
-					{
-						std::lock_guard<std::mutex> lock(*ses->mtx);
-						packet = std::move(ses->buf->front());
-						ses->buf->pop();
-					}
-					
-					int n;
-					lws_write_protocol flag;
-					switch (ses->prot_id) {
-						case WS:
-							flag = LWS_WRITE_TEXT;
-							break;
-						case TCP:
-							flag = LWS_WRITE_RAW;
-							break;
-						default:
-							return -1;
-					}
+				n = lws_write(wsi, &packet[LWS_PRE], packet.size() - LWS_PRE, flag);
 
-					n = lws_write(wsi, &packet[LWS_PRE], packet.size() - LWS_PRE, flag);
+				if (n < 0) {
+					ERROR(_CG_"NetworkService [%14p]"_EC_" / "_CR_"[%14x] Try to send minus frame.", (void*)instance,(void*)wsi);
+					return -1;
+				}
 
-					if (n < 0) return -1;
-					
-					if (!ses->buf->empty()) {
-						lws_callback_on_writable(wsi);
-					}
+				if (!ses->buf->empty()) {
+					LOG(_CG_"NetworkService [%14p]"_EC_" / "_CY_"[%14x] Send is deferred."_EC_, (void*)instance, (void*)wsi);
+					lws_callback_on_writable(wsi);
 				}
 			}
             break;
+		}
 		case LWS_CALLBACK_CLOSED:
 		case LWS_CALLBACK_RAW_CLOSE:
-			{
-				if (ses) {
-					event = LwsCallbackParam::CLOSE;
+		{
+			if (ses) {
+				event = LwsCallbackParam::CLOSE;
 
-					delete ses->buf;
-					delete ses->mtx;
-					ses->buf = nullptr;
-					ses->mtx = nullptr;
+				delete ses->buf;
+				delete ses->mtx;
+				ses->buf = nullptr;
+				ses->mtx = nullptr;
+				
+				LOG(_CG_"NetworkService [%14p]"_EC_" / "_CB_"[%14x] A Session is closed."_EC_, (void*)instance, (void*)wsi);
 
-					std::unique_lock<std::shared_mutex> lock(instance->mtx);
-					instance->session_inst.erase(wsi);
-				}
+				std::unique_lock<std::shared_mutex> lock(instance->ses_inst_mtx);
+				instance->session_inst.erase(wsi);
+				std::unique_lock<std::shared_mutex> lock(instance->umap_mtx);
+				instance->user_map.erase(&ses->user);
 			}
 			break;
+		}
+		case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
+		{
+			instance->del_resv_mtx.lock();
+			auto dels = std::move(instance->del_resv);
+			instance->del_resv_mtx.unlock();
+			if (!dels.empty()) {
+				LOG(_CG_"NetworkService [%14p]"_EC_" / "_CY_"Close asynchronously: Sessions * %d."_EC_, (void*)instance, dels.size());
+				for (auto [wsi_to_close, msg]: dels) {
+					if (ses->prot_id == WS) {
+						lws_close_reason(wsi_to_close, LWS_CLOSE_STATUS_NORMAL, reinterpret_cast<unsigned char*>(msg.c_str()), msg.size());
+					}
+				
+					// deferred to next loop
+					lws_set_timeout(wsi_to_close, PENDING_TIMEOUT_CLOSE_ACK, LWS_TO_KILL_ASYNC);
+				}
+				// lws_close_free_wsi(wsi, LWS_CLOSE_STATUS_NORMAL); // 즉시 종료
+			}
+			break;
+		}
+		case LWS_CALLBACK_FILTER_NETWORK_CONNECTION: 
+		{
+			LOG(_CG_"NetworkService [%14p]"_EC_" / ""[%14x] Network connection detected.", (void*)instance, (void*)wsi);
+			// char ip[64];
+			// lws_get_peer_addresses(wsi, lws_get_socket_fd(wsi), 0, 0, ip, sizeof(ip));
+
+			// // 2. 현재 해당 IP의 연결 수를 카운트 (내부 Map 등 활용)
+			// int current_conn = get_connection_count_by_ip(ip);
+
+			// // 3. 임계치 초과 시 연결 거부
+			// if (current_conn >= MAX_ALLOWED_WSI_PER_IP) {
+			// 	printf("IP %s: 연결 한도 초과로 차단합니다.\n", ip);
+			// 	return -1; // 여기서 -1을 리턴하면 소켓 수락 단계에서 바로 끊김
+			// }
+			break;
+		}
 		default:
 			break;
 	}	

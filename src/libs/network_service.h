@@ -1,7 +1,7 @@
 #ifndef __SOCKET_EVENTER_H__
 #define __SOCKET_EVENTER_H__
 
-#include <type_traits>
+#include <unordered_map>
 #include <unordered_set>
 #include <shared_mutex>
 
@@ -11,15 +11,6 @@
 
 // // 해당 wsi에 대해 30초의 타임아웃을 설정
 // lws_set_timeout(wsi, PENDING_TIMEOUT_HTTP_KEEPALIVE_IDLE, 30);
-
-// // TCP 연결 후 웹소켓 핸드셰이크가 완료되어야 하는 제한 시간 (초)
-// info.timeout_secs = 15;
-
-//
-//lws_cancel_service <- service blocking 무기 => awake
-
-// 즉시 소켓을 닫고 wsi 메모리를 해제합니다. (lws 스레드 내부 권장)
-// lws_close_free_wsi(wsi, LWS_CLOSE_STATUS_NORMAL);
 
 // TODO: TCP ping-pong
 
@@ -49,9 +40,15 @@ class NetworkService {
 	private:
 		ctx* context;
 		ctx_creation_info info;
-		int ctx_port;
+
+		
 		std::unordered_set<lws*> session_inst;
-		std::shared_mutex mtx;
+		std::unordered_map<T*, lws*> user_map;
+		std::unordered_set<std::pair<lws*, std::string>> del_resv; // save msg as string since easier auto free
+		
+		std::shared_mutex ses_inst_mtx;
+		std::shared_mutex umap_mtx;
+		std::shared_mutex del_resv_mtx;
 	public:
 		NetworkService(const int port);
 		~NetworkService();
@@ -60,10 +57,19 @@ class NetworkService {
 
 		void serve(const msec to);
 
-		void send(lws* wsi, const std::string& msg);
-		void send(lws* wsi, const unsigned char* data, size_t len);
-		void broadcast(std::string& msg);
-		void broadcast(const unsigned char* data, size_t len);
+		lws* get_wsi(T* user);
+
+		void send_async(lws* wsi, const std::string& msg);
+		void send_async(lws* wsi, const unsigned char* data, size_t len);
+		void send_async(T* user, const std::string& msg);
+		void send_async(T* user, const unsigned char* data, size_t len);
+		void broadcast_async(std::string& msg);
+		void broadcast_async(const unsigned char* data, size_t len);
+		
+		void close_async(lws* wsi, const std::string& msg);
+		void close_async(lws* wsi, const unsigned char* data, size_t len);
+		void close_async(T* user, const std::string& msg);
+		void close_async(T* user, const unsigned char* data, size_t len);
 		// ctx* get_ctx() const;
 	private:
 		void accumulate(lws* wsi, const unsigned char* data, size_t len);
