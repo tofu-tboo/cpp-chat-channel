@@ -60,7 +60,7 @@ class ServerBase: public SessionEvHandler<U> {
 
         msec timeout;
 
-        std::unordered_set<U*> next_deletion;
+        std::unordered_set<typename NetworkService<U>::Session*> next_deletion;
 
         TaskRunner<void()> task_runner;
         std::atomic<bool> is_running;
@@ -78,11 +78,11 @@ class ServerBase: public SessionEvHandler<U> {
         // Tasks
         virtual void resolve_deletion();
 
-		virtual void on_frame(const U& user, const std::string& frame) = 0;
-        virtual void on_accept(U& user);
-		virtual void on_close(U& user);
-		virtual void on_recv(U& user, const RecvStream& stream);
-		virtual void on_send(U& user);
+		virtual void on_frame(const typename NetworkService<U>::Session& ses, const std::string& frame) = 0;
+        virtual void on_accept(typename NetworkService<U>::Session& ses);
+		virtual void on_close(typename NetworkService<U>::Session& ses);
+		virtual void on_recv(typename NetworkService<U>::Session& ses, const RecvStream& stream);
+		virtual void on_send(typename NetworkService<U>::Session& ses);
 		// virtual User translate(LwsCallbackParam&& param);
 	
 		friend class ServerFactory;

@@ -17,34 +17,36 @@ void Channel::process() {
     }
 }
 
-void Channel::leave(User* user, const MessageReqDto& msg) {
-	leave_pool.emplace(user, msg);
+void Channel::leave(typename NetworkService<User>::Session* ses, const MessageReqDto& msg) {
+	leave_pool.emplace(ses, msg);
 }
 
-void Channel::join(User* user, const MessageReqDto& msg) {
+void Channel::join(typename NetworkService<User>::Session* ses, const MessageReqDto& msg) {
 	if (users.empty()) {
 		empty_since.store(0);
 	}
-	join_pool.emplace(user, msg);
+	join_pool.emplace(ses, msg);
 }
 
-void Channel::leave_and_logging(User* user, msec64 timestamp) {
+void Channel::leave_and_logging(typename NetworkService<User>::Session* ses, msec64 timestamp) {
 	try {		
+		User* user = ses->user;
 		MessageReqDto sys_msg = { .type = SYSTEM, .text = "leave", .timestamp = timestamp, .channel_id = channel_id };
 		if (user->name) sys_msg.user_name = user->name;
 		else {
-			next_deletion.insert(user); // 이름을 알 수 없으면 강제 퇴장
+			next_deletion.insert(ses); // 이름을 알 수 없으면 강제 퇴장
 			return;
 		}
 
-		leave(user, sys_msg);
+		leave(ses, sys_msg);
 	} catch (const std::exception& e) {
 		iERROR("Logging failed: %s", e.what());
 	}
 }
 
-void Channel::join_and_logging(User* user, msec64 timestamp, bool re) {
+void Channel::join_and_logging(typename NetworkService<User>::Session* ses, msec64 timestamp, bool re) {
 	try {		
+		User* user = ses->user;
 		MessageReqDto sys_msg = { .type = SYSTEM, .timestamp = timestamp, .channel_id = channel_id };
 
 		if (user->name) sys_msg.user_name = user->name;
@@ -54,7 +56,7 @@ void Channel::join_and_logging(User* user, msec64 timestamp, bool re) {
 
 		sys_msg.text = re ? "rejoin" : "join";
 
-		join(user, sys_msg);
+		join(ses, sys_msg);
 	} catch (const std::exception& e) {
         iERROR("Logging failed: %s", e.what());
     }
@@ -78,9 +80,10 @@ bool Channel::is_stopped() const { return stop_flag.load(); }
 #pragma region PROTECTED_FUNC
 void Channel::set_network(const char* port) {}
 
-void Channel::on_accept(User& client) {} // accept only occured in lobby(ChannelServer)
+void Channel::on_accept(typename NetworkService<User>::Session& client) {} // accept only occured in lobby(ChannelServer)
 void Channel::resolve_deletion() {
-    for (User* user : next_deletion) {
+    for (auto* session : next_deletion) {
+		User* user = session->user;
 		msec64 timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 		
 		MessageReqDto sys_msg = { .type = SYSTEM, .text = "leave", .timestamp = timestamp, .channel_id = channel_id };
@@ -89,14 +92,14 @@ void Channel::resolve_deletion() {
 			sys_msg.user_name = "unknown";
 		}
 
-		mq.push({user, sys_msg});
+		mq.push({session, sys_msg});
 
 		// try {
 		// 	con_tracker->delete_client(fd);
 		// } catch (...) {}
 
 		// UserManager::remove_user_name(fd);
-        service->close_async(user, "Bye");
+        service->close_async(session, "Bye");
         LOG("Normally Disconnected: user %p", user);
     }
     next_deletion.clear();
@@ -104,22 +107,22 @@ void Channel::resolve_deletion() {
 
 void Channel::resolve_pool() {
 	std::lock_guard<std::mutex> lock(pool_mtx);
-	std::unordered_map<User*, MessageReqDto> local_q = std::move(join_pool);
-	for (const auto& [user, msg] : local_q) {
+	auto local_join_q = std::move(join_pool);
+	for (const auto& [ses, msg] : local_join_q) {
 		try {
-			users.insert(user);
-		    mq.push({user, msg});
-        	LOG(_CB_ "[Join] User %p joined channel %u at %lu" _EC_, user, channel_id, msg.timestamp);
+			users.insert(ses);
+		    mq.push({ses, msg});
+        	LOG(_CB_ "[Join] User %p joined channel %u at %lu" _EC_, ses->user, channel_id, msg.timestamp);
 		} catch (const std::exception& e) {
 			iERROR("%s", e.what());
 		}
 	}
-	local_q = std::move(leave_pool);
-	for (const auto& [user, msg] : local_q) {
+	auto local_leave_q = std::move(leave_pool);
+	for (const auto& [ses, msg] : local_leave_q) {
 		try {
-			users.erase(user);
-		    mq.push({user, msg});
-			LOG(_CR_ "[Leave] User %p left channel %u at %lu" _EC_, user, channel_id, msg.timestamp);
+			users.erase(ses);
+		    mq.push({ses, msg});
+			LOG(_CR_ "[Leave] User %p left channel %u at %lu" _EC_, ses->user, channel_id, msg.timestamp);
 		} catch (const std::exception& e) {
 			iERROR("%s", e.what());
 		}
@@ -130,12 +133,12 @@ void Channel::resolve_pool() {
 	}
 }
 
-void Channel::on_req(const User& from, const char* target, Json& root) {
+void Channel::on_req(const typename NetworkService<User>::Session& ses, const char* target, Json& root) {
     switch (hash(target)) {
     case hash("message"):
     case hash("Message"):
     case hash("MESSAGE"):
-		ChatServer::on_req(from, target, root);
+		ChatServer::on_req(ses, target, root);
         break;
     case hash("join"):
     case hash("Join"):
@@ -149,7 +152,7 @@ void Channel::on_req(const User& from, const char* target, Json& root) {
 				UReportDto dto;
 				dto.join = new JoinReqDto{ .ch_from = channel_id, .ch_to = ch_to, .timestamp = timestamp };
 
-				server->report({ChannelServer::ChannelReport::JOIN, const_cast<User*>(&from), dto});
+				server->report({ChannelServer::ChannelReport::JOIN, const_cast<typename NetworkService<User>::Session*>(&ses), dto});
 			} __UNPACK_FAIL {
 				iERROR("Malformed JSON message, missing channel_id.");
 			}

@@ -14,9 +14,9 @@
 
 class ChatServer : public TypedJsonFrameServer<User> {
 	protected:
-		std::unordered_set<User*> users;
-		std::multimap<msec64, std::pair<User*, MessageReqDto>> cur_msgs; // timestamped messages
-		ProducerConsumerQueue<std::pair<User*, MessageReqDto>> mq; // message queue (raw JSON strings)
+		std::unordered_set<typename NetworkService<User>::Session*> users;
+		std::multimap<msec64, std::pair<typename NetworkService<User>::Session*, MessageReqDto>> cur_msgs; // timestamped messages
+		ProducerConsumerQueue<std::pair<typename NetworkService<User>::Session*, MessageReqDto>> mq; // message queue (raw JSON strings)
 	public:
 		ChatServer(NetworkService<User>* service, const int max_fd = 32, const msec to = 1000);
 		~ChatServer();
@@ -26,7 +26,7 @@ class ChatServer : public TypedJsonFrameServer<User> {
         virtual void resolve_broadcast();
 
 		// Hooks
-		virtual void on_req(const User& from, const char* target, Json& root) override; // handle both pure json & payload
+		virtual void on_req(const typename NetworkService<User>::Session& ses, const char* target, Json& root) override; // handle both pure json & payload
 };
 
 #endif

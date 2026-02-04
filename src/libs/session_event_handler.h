@@ -17,11 +17,11 @@ class SessionEvHandler {
 		int callback(const LwsCallbackParam&);
 		friend class NetworkService<T>;
 	public:
-		virtual void on_accept(T&) = 0;
-		virtual void on_recv(T&, const RecvStream&) = 0;
-		virtual void on_send(T&) = 0;
-		virtual void on_close(T&) = 0;
-		virtual T& translate(const LwsCallbackParam&);
+		virtual void on_accept(typename NetworkService<T>::Session&) = 0;
+		virtual void on_recv(typename NetworkService<T>::Session&, const RecvStream&) = 0;
+		virtual void on_send(typename NetworkService<T>::Session&) = 0;
+		virtual void on_close(typename NetworkService<T>::Session&) = 0;
+		virtual typename NetworkService<T>::Session& translate(const LwsCallbackParam&);
 		virtual void pre_event(const LwsCallbackParam&);
 };
 

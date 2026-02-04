@@ -21,22 +21,23 @@ ChatServer::~ChatServer() {
 
 #pragma region PROTECTED_FUNC
 void ChatServer::resolve_deletion() {
-    for (User* user : next_deletion) {
+    for (auto* session : next_deletion) {
+		User* user = session->user;
 		if (user->name) free(user->name);
 		user->name = nullptr;
-        service->close_async(user, "Server closed.");
+        service->close_async(session, "Server closed.");
         LOG("Normally Disconnected: user %p", user);
     }
     next_deletion.clear();
 }
 
 void ChatServer::resolve_timestamps() {
-    std::queue<std::pair<User*, MessageReqDto>> local_q = mq.pop_all();
+    auto local_q = mq.pop_all();
 	while (!local_q.empty()) {
-        std::pair<User*, MessageReqDto> item = std::move(local_q.front());
+        auto item = std::move(local_q.front());
         local_q.pop();
 
-		cur_msgs.emplace(item.second.timestamp, std::pair<User*, MessageReqDto>(item.first, item.second));
+		cur_msgs.emplace(item.second.timestamp, item);
 	}
 }
 
@@ -86,7 +87,8 @@ void ChatServer::resolve_broadcast() {
     }
 }
 
-void ChatServer::on_req(const User& from, const char* target, Json& root) {
+void ChatServer::on_req(const typename NetworkService<User>::Session& ses, const char* target, Json& root) {
+	const User& from = *ses.user;
 	switch (hash(target))
 	{
 	case hash("message"):
@@ -100,7 +102,7 @@ void ChatServer::on_req(const User& from, const char* target, Json& root) {
 			else user_name = "unknown";
 
 			MessageReqDto msg_req = { .type = USER, .text = std::string(text), .timestamp = timestamp, .user_name = user_name };
-			mq.push({const_cast<User*>(&from), msg_req});
+			mq.push({const_cast<typename NetworkService<User>::Session*>(&ses), msg_req});
 		} __UNPACK_FAIL {
 			iERROR("Malformed JSON message, missing timestamp or text.");
 			return;

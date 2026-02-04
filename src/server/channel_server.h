@@ -17,14 +17,14 @@ class ChannelServer: public TypedJsonFrameServer<User> {
     public:
         struct ChannelReport {
 			enum { JOIN } type;
-            User* from;
+            typename NetworkService<User>::Session* from;
 			UReportDto dto;
         };
     private:
         std::unordered_map<ch_id_t, Channel*> channels;
 		ProducerConsumerQueue<ChannelReport> reports;
         std::mutex report_mtx;
-		std::unordered_map<User*, std::chrono::steady_clock::time_point> last_act;
+		std::unordered_map<typename NetworkService<User>::Session*, std::chrono::steady_clock::time_point> last_act;
 
 		int ch_max_fd;
     public:
@@ -34,8 +34,8 @@ class ChannelServer: public TypedJsonFrameServer<User> {
     protected:
 		virtual void resolve_deletion() override;
 
-		virtual void on_accept(User& client) override;
-        virtual void on_req(const User& from, const char* target, Json& root) override;
+		virtual void on_accept(typename NetworkService<User>::Session& ses) override;
+        virtual void on_req(const typename NetworkService<User>::Session& ses, const char* target, Json& root) override;
 		void consume_report();
 	private:
 		Channel* get_channel(const ch_id_t channel_id);

@@ -65,7 +65,7 @@ void ServerBase<U>::stop() {
 
 template <typename U>
 void ServerBase<U>::resolve_deletion() {
-    for (U* user : next_deletion) {
+    for (typename NetworkService<U>::Session* user : next_deletion) {
         service->close_async(user, "Server closed connection.");
 		LOG("Normally Disconnected: user %p", user);
     }
@@ -73,39 +73,35 @@ void ServerBase<U>::resolve_deletion() {
 }
 
 template <typename U>
-void ServerBase<U>::on_accept(U& user) {
+void ServerBase<U>::on_accept(typename NetworkService<U>::Session& ses) {
 	try {
-		LOG("Accepted new connection: user %p", &user);
+		LOG("Accepted new connection: user %p", ses.user);
 
 	} catch (const std::exception& e) {
 		if (const auto* cre = try_get_coded_error(e)) {
 			if (cre->code == POOL_FULL) {
-				service->send_async(&user, std::string(R"({"type":"error","message":"Server is full."})"));
+				service->send_async(&ses, std::string(R"({"type":"error","message":"Server is full."})"));
 			}
 		}
         iERROR("%s", e.what());
-        next_deletion.insert(&user);
+        next_deletion.insert(&ses);
 		return;
     }
 
 }
 
-// void ServerBase<U>::on_disconnect(const fd_t fd) {
-// 	next_deletion.insert(fd);
-// }
-
 template <typename U>
-void ServerBase<U>::on_recv(U& user, const RecvStream& stream) {
+void ServerBase<U>::on_recv(typename NetworkService<U>::Session& ses, const RecvStream& stream) {
 	try {
-        on_frame(user, std::string(reinterpret_cast<const char*>(stream.data), stream.len));
+        on_frame(ses, std::string(reinterpret_cast<const char*>(stream.data), stream.len));
     } catch (const std::exception& e) {
         iERROR("%s", e.what());
-        next_deletion.insert(&user);
+        next_deletion.insert(&ses);
     }
 }
 
 template <typename U>
-void ServerBase<U>::on_send(U& user) {}
+void ServerBase<U>::on_send(typename NetworkService<U>::Session& ses) {}
 
 // User ServerBase<U>::translate(LwsCallbackParam&& param) {
 	

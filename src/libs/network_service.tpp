@@ -1,5 +1,5 @@
+#include <climits>
 #include "network_service.h"
-
 
 template <typename T>
 protocols_t NetworkService<T>::protocols[] = {
@@ -60,35 +60,14 @@ void NetworkService<T>::serve(const msec to) {
 // }
 
 template <typename T>
-lws* NetworkService<T>::get_wsi(T* user) {
-	std::shared_lock<std::shared_mutex> lock(umap_mtx);
-	auto it = user_map.find(user);
-	if (it == user_map.end()) return nullptr;
-	return it->second;
-}
-template <typename T>
-void NetworkService<T>::send_async(lws* wsi, const std::string& msg) {
-    send_async(wsi, reinterpret_cast<const unsigned char*>(msg.c_str()), msg.size());
+void NetworkService<T>::send_async(Session* ses, const std::string& msg) {
+	send_async(ses, msg.c_str(), msg.size());
 }
 
 template <typename T>
-void NetworkService<T>::send_async(lws* wsi, const unsigned char* data, size_t len) {
-	accumulate(wsi, data, len);
-
-    lws_callback_on_writable(wsi);
-    lws_cancel_service(context);
-}
-
-template <typename T>
-void NetworkService<T>::send_async(T* user, const std::string& msg) {
-	lws* wsi = get_wsi(user);
-	if (wsi) send_async(wsi, msg);
-}
-
-template <typename T>
-void NetworkService<T>::send_async(T* user, const unsigned char* data, size_t len) {
-	lws* wsi = get_wsi(user);
-	if (wsi) send_async(wsi, data, len);
+void NetworkService<T>::send_async(Session* ses, const unsigned char* data, size_t len) {
+	accumulate(ses->wsi, data, len);
+	lws_callback_on_writable(wsi);
 }
 
 template <typename T>
@@ -98,51 +77,65 @@ void NetworkService<T>::broadcast_async(std::string& msg) {
 
 template <typename T>
 void NetworkService<T>::broadcast_async(const unsigned char* data, size_t len) {
-    for (auto wsi : this->session_inst) {
+	for (auto& [group, sessions] : this->session_group) {
+		for (auto ses : sessions) {
+			lws* wsi = ses->wsi;
+			accumulate(wsi, data, len);
+        	lws_callback_on_writable(wsi);
+		}
+	}
+}
+
+template <typename T>
+void NetworkService<T>::broadcast_group_async(int group, std::string& msg) {
+	broadcast_group_async(group, msg.c_str(), msg.size());
+}
+template <typename T>
+void NetworkService<T>::broadcast_group_async(int group, const unsigned char* data, size_t len) {
+	for (auto ses: this->session_group[group]) {
+		lws* wsi = ses->wsi;
 		accumulate(wsi, data, len);
         lws_callback_on_writable(wsi);
-    }
-    lws_cancel_service(context);
+	}
+}
+
+
+
+template <typename T>
+void NetworkService<T>::close_async(Session* ses, const std::string& msg) {
+	lws* wsi = ses->wsi;
+	if (wsi) {
+		std::unique_lock<std::shared_mutex> lock(dr_mtx);
+		del_resv.insert({wsi, msg});
+	}
 }
 
 template <typename T>
-void NetworkService<T>::close_async(lws* wsi, const std::string& msg) {
-	std::unique_lock<std::shared_mutex> lock(del_resv_mtx);
-	del_resv.insert({wsi, msg});
+void NetworkService<T>::close_async(Session* ses, const unsigned char* data, size_t len) {
+	lws* wsi = ses->wsi;
+	if (wsi) {
+		std::unique_lock<std::shared_mutex> lock(dr_mtx);
+		del_resv.insert({wsi, std::string(reinterpret_cast<const char*>(data), len)});
+	}
+}
+
+template <typename T>
+void NetworkService<T>::flush() {
 	lws_cancel_service(context);
-}
-
-template <typename T>
-void NetworkService<T>::close_async(lws* wsi, const unsigned char* data, size_t len) {
-	std::unique_lock<std::shared_mutex> lock(del_resv_mtx);
-	del_resv.insert({wsi, std::string(reinterpret_cast<const char*>(data), len)});
-	lws_cancel_service(context);
-}
-
-template <typename T>
-void NetworkService<T>::close_async(T* user, const std::string& msg) {
-	lws* wsi = get_wsi(user);
-	if (wsi) close_async(wsi, msg);
-}
-
-template <typename T>
-void NetworkService<T>::close_async(T* user, const unsigned char* data, size_t len) {
-	lws* wsi = get_wsi(user);
-	if (wsi) close_async(wsi, data, len);
 }
 #pragma region PRIVATE_FUNC
 template <typename T>
 void NetworkService<T>::accumulate(lws* wsi, const unsigned char* data, size_t len) {
-	typename NetworkService<T>::Session* ses = static_cast<typename NetworkService<T>::Session*>(lws_wsi_user(wsi));
-    if (!ses || !ses->buf) throw runtime_errorf("Invalid session.");
 
+	if (!wsi) throw runtime_errorf("Zero wsi.");
+	
 	std::vector<unsigned char> packet(LWS_PRE + len);
     if (len > 0) {
         memcpy(&packet[LWS_PRE], data, len);
     }
 
-    std::lock_guard<std::mutex> lock(*ses->mtx);
-    ses->buf->push(std::move(packet));
+    std::unique_lock<std::shared_mutex> lock(sr_mtx);
+	send_resv[wsi].push(std::move(packet));
 }
 
 template <typename T>
@@ -167,15 +160,21 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 					break;
 			}
 			ses->handler = static_cast<SessionEvHandler<T>*>(lws_context_user(lws_get_context(wsi)));
-			ses->buf = new std::queue<std::vector<unsigned char>>();
-            ses->mtx = new std::mutex();
+			ses->user = new T();
+			ses->wsi = wsi;
+			ses->group = INT_MIN; //reserved
+
+			{
+				std::unique_lock<std::shared_mutex> lock(instance->sg_mtx);
+				instance->send_resv[wsi] = std::queue<std::vector<unsigned char>>();
+			}
+
+			{
+				std::unique_lock<std::shared_mutex> lock(instance->sg_mtx);
+				instance->session_group[ses->group].insert(ses);
+			}
 
 			LOG(_CG_"NetworkService [%14p]"_EC_" / "_CB_"[%14p] A Session is initialized."_EC_, (void*)instance, (void*)wsi);
-
-			std::unique_lock<std::shared_mutex> lock(instance->ses_inst_mtx);
-			instance->session_inst.insert(wsi);
-			std::unique_lock<std::shared_mutex> lock(instance->umap_mtx);
-			instance->user_map[&ses->user] = wsi;
 			break;
 		}
 		case LWS_CALLBACK_RECEIVE:
@@ -185,20 +184,22 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 		case LWS_CALLBACK_SERVER_WRITEABLE:
         case LWS_CALLBACK_RAW_WRITEABLE:
 		{
-			if (ses && !ses->buf->empty()) {
+			std::unique_lock<std::shared_mutex> lock(instance->sr_mtx);
+			if (ses && !instance->send_resv[wsi].empty()) {
 				event = LwsCallbackParam::SEND;
 			
 				if (lws_partial_buffered(wsi)) {
+					lock.unlock();
 					lws_callback_on_writable(wsi);
 					LOG(_CG_"NetworkService [%14p]"_EC_" / "_CY_"[%14x] Unsent data exist."_EC_, (void*)instance, (void*)wsi);
 					break;
 				}
 				std::vector<unsigned char> packet;
-				{
-					std::lock_guard<std::mutex> lock(*ses->mtx);
-					packet = std::move(ses->buf->front());
-					ses->buf->pop();
-				}
+				
+				packet = std::move(instance->send_resv[wsi].front());
+				instance->send_resv[wsi].pop();
+				bool more = !instance->send_resv[wsi].empty();
+				lock.unlock();
 				
 				int n;
 				lws_write_protocol flag;
@@ -220,7 +221,7 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 					return -1;
 				}
 
-				if (!ses->buf->empty()) {
+				if (more) {
 					LOG(_CG_"NetworkService [%14p]"_EC_" / "_CY_"[%14x] Send is deferred."_EC_, (void*)instance, (void*)wsi);
 					lws_callback_on_writable(wsi);
 				}
@@ -233,25 +234,37 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 			if (ses) {
 				event = LwsCallbackParam::CLOSE;
 
-				delete ses->buf;
-				delete ses->mtx;
-				ses->buf = nullptr;
-				ses->mtx = nullptr;
-				
-				LOG(_CG_"NetworkService [%14p]"_EC_" / "_CB_"[%14x] A Session is closed."_EC_, (void*)instance, (void*)wsi);
+				if (ses->user)
+					delete ses->user;
+				ses->user = nullptr;
+				ses->wsi = nullptr;
 
-				std::unique_lock<std::shared_mutex> lock(instance->ses_inst_mtx);
-				instance->session_inst.erase(wsi);
-				std::unique_lock<std::shared_mutex> lock(instance->umap_mtx);
-				instance->user_map.erase(&ses->user);
+				{
+					std::unique_lock<std::shared_mutex> lock(instance->sr_mtx);
+					auto it = instance->send_resv.find(wsi);
+					if (it != instance->send_resv.end()) {
+						instance->send_resv.erase(it);
+					}
+				}
+
+				{
+					std::unique_lock<std::shared_mutex> lock(instance->sg_mtx);
+					auto it = instance->session_group[ses->group].find(ses);
+				
+					instance->session_group[ses->group].erase(it);
+				}
+
+				LOG(_CG_"NetworkService [%14p]"_EC_" / "_CB_"[%14x] A Session is closed."_EC_, (void*)instance, (void*)wsi);
 			}
 			break;
 		}
 		case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
 		{
-			instance->del_resv_mtx.lock();
-			auto dels = std::move(instance->del_resv);
-			instance->del_resv_mtx.unlock();
+			std::map<lws*, std::string> dels;
+			{
+				std::unique_lock<std::shared_mutex> lock(instance->sr_mtx);
+				dels = std::move(instance->del_resv);
+			}
 			if (!dels.empty()) {
 				LOG(_CG_"NetworkService [%14p]"_EC_" / "_CY_"Close asynchronously: Sessions * %d."_EC_, (void*)instance, dels.size());
 				for (auto [wsi_to_close, msg]: dels) {
@@ -292,7 +305,7 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 	handler = ses->handler;
 
 	if (handler) {
-		return handler->callback({ .wsi = wsi, .event = event, .user = (ses ? &ses->user : nullptr), .in = static_cast<unsigned char*>(in), .len = len, .prot_id = ses->prot_id }); // uncapsulate user
+		return handler->callback({ .wsi = wsi, .event = event, .user = ses, .in = static_cast<unsigned char*>(in), .len = len, .prot_id = ses->prot_id }); // uncapsulate user
 	}
 	return 0;
 }

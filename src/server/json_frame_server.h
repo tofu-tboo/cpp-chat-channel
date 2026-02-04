@@ -9,8 +9,8 @@ class JsonFrameServer: public ServerBase<U> {
 public:
     using ServerBase<U>::ServerBase;
 protected:
-    virtual void on_frame(const U& user, const std::string& frame) override;
-    virtual void on_json(const U& user, Json& root) = 0;
+    virtual void on_frame(const typename NetworkService<U>::Session& ses, const std::string& frame) override;
+    virtual void on_json(const typename NetworkService<U>::Session& ses, Json& root) = 0;
 };
 
 #include "json_frame_server.tpp"

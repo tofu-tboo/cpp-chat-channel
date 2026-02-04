@@ -4,24 +4,24 @@
 template <typename T>
 int SessionEvHandler<T>::callback(const LwsCallbackParam& param) {
 
-	Connection connection = { .wsi = param.wsi, .prot_id = param.prot_id };
-	T& user = translate(param);
+	// Connection connection = { .wsi = param.wsi, .prot_id = param.prot_id };
+	typename NetworkService<T>::Session& ses = translate(param);
 
 	try {
 		pre_event(param);
 
 		switch (param.event) {
 			case LwsCallbackParam::ACPT:
-				on_accept(user);
+				on_accept(ses);
 				break;
 			case LwsCallbackParam::RECV:
-				on_recv(user, { .data = param.in, .len = param.len});
+				on_recv(ses, { .data = param.in, .len = param.len});
 				break;
 			case LwsCallbackParam::SEND:
-				on_send(user);
+				on_send(ses);
 				break;
 			case LwsCallbackParam::CLOSE:
-				on_close(user);
+				on_close(ses);
 				break;
 			default:
 				break;
@@ -34,9 +34,9 @@ int SessionEvHandler<T>::callback(const LwsCallbackParam& param) {
 }
 
 template <typename T>
-T& SessionEvHandler<T>::translate(const LwsCallbackParam& param) {
+typename NetworkService<T>::Session& SessionEvHandler<T>::translate(const LwsCallbackParam& param) {
 	// if (!param.user) return T(); // Should ensure param.user is valid in caller
-	return *static_cast<T*>(param.user); // Return reference to persistent session object
+	return *static_cast<typename NetworkService<T>::Session*>(param.user); // Return reference to persistent session object
 }
 
 template <typename T>
