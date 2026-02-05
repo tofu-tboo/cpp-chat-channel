@@ -6,7 +6,7 @@
 
 class ServerFactory {
 	public:
-	template <class S, typename... Args>
+	template <typename U, class S, typename... Args>
 		static S* create(Args&&... args);
 };
 

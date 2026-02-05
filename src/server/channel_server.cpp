@@ -2,19 +2,7 @@
 #include "../libs/util.h"
 #include "user_manager.h"
 
-ChannelServer::ChannelServer(NetworkService<User>* service, const int max_fd, const int ch_max_fd, const msec to): TypedJsonFrameServer(service, max_fd, to), ch_max_fd(ch_max_fd) {
-    // Periodically process switch requests from channels
-    task_runner.pushb(TS_PRE, [this]() {
-        consume_report();
-    });
-	task_runner.pushf(TS_LOGIC, AsThrottle([this]() {
-		check_lobby();
-		check_channels();
-		for (auto& [_, channel] : channels) {
-			channel->process();
-		}
-	}, 1000));
-}
+ChannelServer::ChannelServer(NetworkService<User>* service, const int max, const int ch_max, const msec to): TypedJsonFrameServer(service, max, to), ch_max_conn(ch_max) {}
 
 ChannelServer::~ChannelServer() {
     for (auto& [_, channel] : channels) {
@@ -31,6 +19,24 @@ ChannelServer::~ChannelServer() {
 		}
     }
     channels.clear();
+}
+
+bool ChannelServer::init() {
+	if (TypedJsonFrameServer::init()) {
+		// Periodically process switch requests from channels
+		task_runner.pushb(TS_PRE, [this]() {
+			consume_report();
+		});
+		task_runner.pushf(TS_LOGIC, AsThrottle([this]() {
+			check_lobby();
+			check_channels();
+			for (auto& [_, channel] : channels) {
+				channel->process();
+			}
+		}, 1000));
+		return true;
+	}
+	return false;	
 }
 
 void ChannelServer::report(const ChannelReport& req) {
@@ -60,12 +66,12 @@ void ChannelServer::resolve_deletion() {
 
 void ChannelServer::on_accept(typename NetworkService<User>::Session& ses) {
     try {
-        // UserManager::check_and_register_ip(client, 20);
+		if (cur_conn >= max_conn)
+			throw runtime_errorf(POOL_FULL);
+		
+		cur_conn++;
 
-        // con_tracker->add_client(client);
-		// UserManager::set_user_name(client, "user_" + std::to_string(client)); // temporary username assignment
-
-		last_act[&ses] = std::chrono::steady_clock::now();
+		last_act[&ses] = now_ms();
 	} catch (const std::exception& e) {
 		if (const auto* cre = try_get_coded_error(e)) {
 			switch (cre->code)
@@ -73,15 +79,12 @@ void ChannelServer::on_accept(typename NetworkService<User>::Session& ses) {
 			case POOL_FULL:
 				service->send_async(&ses, std::string(R"({"type":"error","message":"Server is full."})"));
 				break;
-			case IP_FULL:
-				service->send_async(&ses, std::string(R"({"type":"error","message":"Too many connections from your IP."})"));
-				break;
 			default:
 				break;
 			}
 		}
         iERROR("%s", e.what());
-        next_deletion.insert(&ses);
+        // next_deletion.insert(&ses);
 		return;
     }
 }
@@ -95,9 +98,9 @@ void ChannelServer::on_req(const typename NetworkService<User>::Session& ses, co
     case hash("JOIN"):
         {
             ch_id_t channel_id;
-			msec64 timestamp;
+			msec64 timestamp = now_ms();
 			const char* user_name;
-			__UNPACK_JSON(root, "{s:I,s:I,s:s}", "channel_id", &channel_id, "timestamp", &timestamp, "user_name", &user_name) {
+			__UNPACK_JSON(root, "{s:I,s:s}", "channel_id", &channel_id, "user_name", &user_name) {
 				if (from->name) free(from->name);
 				from->name = strdup(user_name);
 
@@ -155,7 +158,7 @@ void ChannelServer::consume_report() {
 #pragma region PRIVATE_FUNC
 Channel* ChannelServer::get_channel(const ch_id_t channel_id) {
 	if (channels.find(channel_id) == channels.end()) {
-		Channel* channel = new Channel(service, this, channel_id, ch_max_fd);
+		Channel* channel = new Channel(service, this, channel_id, ch_max_conn);
 		channels[channel_id] = channel;
 		LOG(_CG_ "Channel %u created." _EC_, channel_id);
 	}
@@ -197,22 +200,23 @@ Channel* ChannelServer::find_or_create_channel(ch_id_t preferred_id) {
 }
 
 void ChannelServer::check_lobby() {
-	auto now = std::chrono::steady_clock::now();
-	std::unordered_map<typename NetworkService<User>::Session*, std::chrono::steady_clock::time_point> next;
+	auto now = now_ms();
+	std::unordered_map<typename NetworkService<User>::Session*, msec64> next;
 	for (const auto& [session, t] : last_act) {
-		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - t).count();
+		auto elapsed = now - t;
 		if (elapsed < 5000) {
 			next[session] = t;
 		} else {
 			LOG("Lobby timeout: user %p", session->user);
-			next_deletion.insert(session);
+			// next_deletion.insert(session);
+			service->close_async(session, std::string("Lobby timeout."));
 		}
 	}
 	last_act = std::move(next);
 }
 
 void ChannelServer::check_channels() {
-	msec64 now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+	msec64 now = now_ms();
 	for (auto it = channels.begin(); it != channels.end(); ) {
 		Channel* ch = it->second;
 		if (ch->get_empty_since() > 0) {

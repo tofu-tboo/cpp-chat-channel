@@ -1,6 +1,8 @@
 #ifndef __SOCKET_EVENTER_H__
 #define __SOCKET_EVENTER_H__
 
+#define MAX_FRAME_SIZE		2048
+
 #include <queue>
 #include <set>
 #include <map>
@@ -11,14 +13,14 @@
 #include "socket.h"
 #include "session_event_handler.h"
 #include "dto.h"
+#include "util.h"
 
 // // 해당 wsi에 대해 30초의 타임아웃을 설정
 // lws_set_timeout(wsi, PENDING_TIMEOUT_HTTP_KEEPALIVE_IDLE, 30);
 
 /* TODO
-- TCP ping-pong
+- TCP ping-pong: lws_timed_callback_vh_protocol?
 - close & send queue: flush() to cancel_service
-- broadcast needed to be based on channel: middleware?, grouping
 
 */
 
@@ -27,6 +29,8 @@
 
 // template<typename T>
 // struct has_wsi<T, std::void_t<decltype(std::declval<T>().wsi)>> : std::true_type {};
+
+// NetworkService allows the packets to be limited as certain size.
 
 template <typename T>
 class NetworkService {
@@ -58,6 +62,8 @@ class NetworkService {
 		std::shared_mutex sg_mtx;
 		std::shared_mutex dr_mtx;
 		std::shared_mutex sr_mtx;
+
+		SessionEvHandler<T>* handler; // initial client-handler
 	public:
 		NetworkService(const int port);
 		~NetworkService();
@@ -69,7 +75,7 @@ class NetworkService {
 		void send_async(Session* ses, const std::string& msg);
 		void send_async(Session* ses, const unsigned char* data, size_t len);
 
-		void broadcast_async(std::string& msg);
+		void broadcast_async(const std::string& msg);
 		void broadcast_async(const unsigned char* data, size_t len);
 		void broadcast_group_async(int group, std::string& msg);
 		void broadcast_group_async(int group, const unsigned char* data, size_t len);
@@ -80,7 +86,7 @@ class NetworkService {
 		void flush();
 		// ctx* get_ctx() const;
 	private:
-		void accumulate(lws* wsi, const unsigned char* data, size_t len);
+		void accumulate(Session* ses, const unsigned char* data, size_t len);
 };
 
 #include "network_service.tpp"

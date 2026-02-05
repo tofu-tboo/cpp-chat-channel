@@ -5,6 +5,8 @@
 
 template <typename U>
 class TypedJsonFrameServer : public JsonFrameServer<U> {
+public:
+	using JsonFrameServer<U>::JsonFrameServer;
 protected:
     virtual void on_json(const typename NetworkService<U>::Session& ses, Json& root) override;
 

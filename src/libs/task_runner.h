@@ -7,7 +7,6 @@
 #include <stdexcept>
 #include <iterator>
 #include <mutex>
-#include <chrono>
 
 #include "util.h"
 
@@ -48,7 +47,7 @@ class TaskRunner {
 template <typename Callable>
 auto AsThrottle(Callable&& func, msec64 timeout) {
     return [func = std::forward<Callable>(func), timeout, last = msec64(0)]() mutable {
-        msec64 now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        msec64 now = now_ms();
         if (now - last < timeout) return;
         last = now;
         func();

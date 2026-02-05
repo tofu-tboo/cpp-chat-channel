@@ -29,7 +29,6 @@ int SessionEvHandler<T>::callback(const LwsCallbackParam& param) {
 	} catch (...) {
 		return -1;
 	}
-
 	return 0;
 }
 

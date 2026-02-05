@@ -2,10 +2,8 @@
 #include "channel_server.h"
 #include "user_manager.h"
 
-Channel::Channel(NetworkService<User>* service, ChannelServer* srv, ch_id_t id, const int max_fd): ChatServer(service, max_fd, 100), channel_id(id), server(srv), paused(false) {
-}
-Channel::~Channel() {
-}
+Channel::Channel(NetworkService<User>* service, ChannelServer* srv, ch_id_t id, const int max_fd): ChatServer(service, max_fd, 100), channel_id(id), server(srv), paused(false) {}
+Channel::~Channel() {}
 
 void Channel::process() {
     try {
@@ -75,7 +73,7 @@ void Channel::start_pooling() {
 }
 
 msec64 Channel::get_empty_since() const { return empty_since.load(); }
-bool Channel::is_stopped() const { return stop_flag.load(); }
+// bool Channel::is_stopped() const { return stop_flag.load(); }
 
 #pragma region PROTECTED_FUNC
 void Channel::set_network(const char* port) {}
@@ -106,31 +104,31 @@ void Channel::resolve_deletion() {
 }
 
 void Channel::resolve_pool() {
-	std::lock_guard<std::mutex> lock(pool_mtx);
-	auto local_join_q = std::move(join_pool);
-	for (const auto& [ses, msg] : local_join_q) {
-		try {
-			users.insert(ses);
-		    mq.push({ses, msg});
-        	LOG(_CB_ "[Join] User %p joined channel %u at %lu" _EC_, ses->user, channel_id, msg.timestamp);
-		} catch (const std::exception& e) {
-			iERROR("%s", e.what());
-		}
-	}
-	auto local_leave_q = std::move(leave_pool);
-	for (const auto& [ses, msg] : local_leave_q) {
-		try {
-			users.erase(ses);
-		    mq.push({ses, msg});
-			LOG(_CR_ "[Leave] User %p left channel %u at %lu" _EC_, ses->user, channel_id, msg.timestamp);
-		} catch (const std::exception& e) {
-			iERROR("%s", e.what());
-		}
-	}
+	// std::lock_guard<std::mutex> lock(pool_mtx);
+	// auto local_join_q = std::move(join_pool);
+	// for (const auto& [ses, msg] : local_join_q) {
+	// 	try {
+	// 		users.insert(ses);
+	// 	    mq.push({ses, msg});
+    //     	LOG(_CB_ "[Join] User %p joined channel %u at %lu" _EC_, ses->user, channel_id, msg.timestamp);
+	// 	} catch (const std::exception& e) {
+	// 		iERROR("%s", e.what());
+	// 	}
+	// }
+	// auto local_leave_q = std::move(leave_pool);
+	// for (const auto& [ses, msg] : local_leave_q) {
+	// 	try {
+	// 		users.erase(ses);
+	// 	    mq.push({ses, msg});
+	// 		LOG(_CR_ "[Leave] User %p left channel %u at %lu" _EC_, ses->user, channel_id, msg.timestamp);
+	// 	} catch (const std::exception& e) {
+	// 		iERROR("%s", e.what());
+	// 	}
+	// }
 
-	if (users.empty()) {
-		empty_since.store(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
-	}
+	// if (users.empty()) {
+	// 	empty_since.store(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+	// }
 }
 
 void Channel::on_req(const typename NetworkService<User>::Session& ses, const char* target, Json& root) {
@@ -145,8 +143,8 @@ void Channel::on_req(const typename NetworkService<User>::Session& ses, const ch
     case hash("JOIN"):
         {
 			ch_id_t ch_to;
-			msec64 timestamp;
-			__UNPACK_JSON(root, "{s:I,s:I}", "channel_id", &ch_to, "timestamp", &timestamp) {
+			msec64 timestamp = now_ms();
+			__UNPACK_JSON(root, "{s:I}", "channel_id", &ch_to) {
 				if (ch_to == channel_id) return;
 				
 				UReportDto dto;

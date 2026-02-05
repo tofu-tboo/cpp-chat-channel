@@ -6,6 +6,6 @@ void TypedJsonFrameServer<U>::on_json(const typename NetworkService<U>::Session&
     __UNPACK_JSON(root, "{s:s}", "type", &type) {
         on_req(ses, type, root);
     } __UNPACK_FAIL {
-        iERROR("Malformed JSON message, missing type.");
+        throw runtime_errorf("Malformed JSON message, missing type.");
     }
 }

@@ -7,6 +7,7 @@
 #include <vector>
 #include <cstdint>
 #include <stdexcept>
+#include <chrono>
 
 #define _EC_                                    "\033[0m"
 #define _CR_                		            "\033[0;31m"
@@ -100,4 +101,6 @@ coded_runtime_error runtime_errorf(int code, const char* fmt, Args&&... args) {
 }
 
 const coded_runtime_error* try_get_coded_error(const std::exception& e);
+
+msec64 now_ms();
 #endif

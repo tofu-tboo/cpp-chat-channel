@@ -1,6 +1,8 @@
 #ifndef __SERVER_BASE_H__
 #define __SERVER_BASE_H__
 
+#define POOL_FULL      601
+
 #define iERROR(...)         LOG2(_CR_ "[%x] " _EC_, branch_id); ERROR(__VA_ARGS__)
 
 #include <unordered_map>
@@ -64,16 +66,19 @@ class ServerBase: public SessionEvHandler<U> {
 
         TaskRunner<void()> task_runner;
         std::atomic<bool> is_running;
+
+		unsigned int max_conn;
+		unsigned int cur_conn;
     public:
         ServerBase(NetworkService<U>* di_service, const int max_fd = 256, const msec to = 1000);
         ~ServerBase();
 
+		virtual bool init();
         virtual void proc(); // 외부에서의 서버 진입점
         void stop();
 
         // virtual void report(const ChannelReport& req);
     protected:
-		virtual void init();
 
         // Tasks
         virtual void resolve_deletion();
@@ -84,8 +89,6 @@ class ServerBase: public SessionEvHandler<U> {
 		virtual void on_recv(typename NetworkService<U>::Session& ses, const RecvStream& stream);
 		virtual void on_send(typename NetworkService<U>::Session& ses);
 		// virtual User translate(LwsCallbackParam&& param);
-	
-		friend class ServerFactory;
 };
 
 #include "server_base.tpp"

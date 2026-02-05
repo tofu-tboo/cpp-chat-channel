@@ -20,7 +20,9 @@ class ChatServer : public TypedJsonFrameServer<User> {
 	public:
 		ChatServer(NetworkService<User>* service, const int max_fd = 32, const msec to = 1000);
 		~ChatServer();
+		virtual bool init() override;
 	protected:
+
 		virtual void resolve_deletion() override;
 		virtual void resolve_timestamps();
         virtual void resolve_broadcast();

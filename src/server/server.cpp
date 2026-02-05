@@ -35,7 +35,7 @@ int main(int argc, char* argv[]) {
     signal(SIGTERM, signal_handler);
 
 	NetworkService<User> service(port);
-	g_server = ServerFactory::create<ChannelServer>(&service, lobby_max_fd, ch_max_fd);
+	g_server = ServerFactory::create<User, ChannelServer>(&service, lobby_max_fd, ch_max_fd);
 
     g_server->proc();
 

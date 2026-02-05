@@ -5,8 +5,8 @@
 #define FD_ERR              -1
 
 // Define protocol num
-#define WS			0
-#define TCP			1
+#define TCP			0
+#define WS			1
 #define WS_NAME		("ws")
 #define TCP_NAME	("tcp")
 

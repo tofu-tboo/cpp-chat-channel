@@ -20,6 +20,9 @@ static int g_channel_id = 0;
 
 typedef uint64_t msec64;
 
+msec64 now_ms() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 
 static int connect_tcp(const char* host, const char* port) {
     addrinfo hints{}, *res = nullptr;
@@ -65,11 +68,6 @@ static bool send_frame(int fd, const std::string& payload) {
         sent += static_cast<size_t>(n);
     }
     return true;
-}
-
-static msec64 now_ms() {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
 static void disableRawMode() {

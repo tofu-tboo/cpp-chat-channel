@@ -5,8 +5,7 @@ void JsonFrameServer<U>::on_frame(const typename NetworkService<U>::Session& ses
     json_error_t err;
     Json root(json_loads(frame.c_str(), 0, &err));
     if (root.get() == nullptr) {
-        iERROR("Failed to parse JSON: %s", err.text);
-        return;
+        throw runtime_errorf("Failed to parse JSON: %s", err.text);
     }
     on_json(ses, root);
 }

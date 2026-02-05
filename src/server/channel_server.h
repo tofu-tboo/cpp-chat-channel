@@ -1,6 +1,8 @@
 #ifndef __CHANNEL_SERVER_H__
 #define __CHANNEL_SERVER_H__
 
+#include <map>
+
 #include "typed_json_frame_server.h"
 #include "chat_server.h"
 #include "channel.h"
@@ -21,17 +23,19 @@ class ChannelServer: public TypedJsonFrameServer<User> {
 			UReportDto dto;
         };
     private:
-        std::unordered_map<ch_id_t, Channel*> channels;
+        std::map<ch_id_t, Channel*> channels;
 		ProducerConsumerQueue<ChannelReport> reports;
         std::mutex report_mtx;
-		std::unordered_map<typename NetworkService<User>::Session*, std::chrono::steady_clock::time_point> last_act;
+		std::unordered_map<typename NetworkService<User>::Session*, msec64> last_act;
 
-		int ch_max_fd;
+		int ch_max_conn;
     public:
         ChannelServer(NetworkService<User>* service, const int max_fd = 256, const int ch_max_fd = 32, const msec to = 1000);
         ~ChannelServer();
+		virtual bool init() override;
         void report(const ChannelReport& req);
     protected:
+
 		virtual void resolve_deletion() override;
 
 		virtual void on_accept(typename NetworkService<User>::Session& ses) override;
