@@ -27,7 +27,7 @@ bool ServerBase<U>::init() {
 		// Polling
         task_runner.pushb(TS_POLL, [this]() {
             // con_tracker->polling(timeout);
-			service->serve(timeout); // TODO: api: ignored timeout
+			service->serve(); // TODO: api: ignored timeout
         });
 		// Deletion fds
         task_runner.pushb(TS_LOGIC, [this]() {

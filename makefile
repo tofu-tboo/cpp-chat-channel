@@ -27,7 +27,7 @@ server: src/server/server.cpp src/server/channel_server.cpp src/server/chat_serv
 server-simple: src/server/channel_server.cpp src/server/chat_server.cpp src/server/channel.cpp src/server/user_manager.cpp src/libs/util.cpp src/libs/json.cpp src/libs/connection_tracker.cpp src/libs/communication.cpp src/server/server_simple.cpp | $(OUT_DIR)
 	g++ $(CXXFLAGS) -o $(OUT_DIR)/$@ $^ $(PACKAGES)
 
-libs: src/libs/util.cpp src/libs/json.cpp src/libs/connection_tracker.cpp src/libs/task_runner.tpp src/libs/communication.cpp src/libs/network_service.tpp
+libs: src/libs/util.cpp src/libs/json.cpp src/libs/connection_tracker.cpp src/libs/task_runner.tpp src/libs/communication.cpp src/libs/network_service.tpp src/libs/network_service_blocking.tpp
 	g++ -c $< -o $(OUT_DIR)/$@ $(PACKAGES)
 
 clean:

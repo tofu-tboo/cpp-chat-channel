@@ -1,7 +1,7 @@
 #ifndef __SOCKET_EVENTER_H__
 #define __SOCKET_EVENTER_H__
 
-#define MAX_FRAME_SIZE		2048
+#define MAX_FRAME_SIZE			2048
 
 #include <queue>
 #include <set>
@@ -68,9 +68,9 @@ class NetworkService {
 		NetworkService(const int port);
 		~NetworkService();
 
-		void setup(SessionEvHandler<T>* i_handler);
+		virtual void setup(SessionEvHandler<T>* i_handler);
 
-		void serve(const msec to);
+		virtual void serve();
 
 		void send_async(Session* ses, const std::string& msg);
 		void send_async(Session* ses, const unsigned char* data, size_t len);
@@ -87,6 +87,9 @@ class NetworkService {
 		// ctx* get_ctx() const;
 	private:
 		void accumulate(Session* ses, const unsigned char* data, size_t len);
+	protected:
+		virtual void pre_proc(lws* wsi, callback_reason reason, void* session, void* in, size_t len);
+		virtual void post_proc(lws* wsi, callback_reason reason, void* session, void* in, size_t len);
 };
 
 #include "network_service.tpp"

@@ -5,7 +5,7 @@
 #include "../libs/util.h"
 #include "server_factory.h"
 #include "channel_server.h"
-#include "../libs/network_service.h"
+#include "../libs/network_service_blocking.h"
 
 ChannelServer* g_server = nullptr;
 
@@ -34,7 +34,7 @@ int main(int argc, char* argv[]) {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
-	NetworkService<User> service(port);
+	NetworkServiceBlocking<User> service(port, NetworkServiceBlocking<User>::NOTF_MODE::ENTIRE, 1000);
 	g_server = ServerFactory::create<User, ChannelServer>(&service, lobby_max_fd, ch_max_fd);
 
     g_server->proc();

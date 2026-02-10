@@ -40,7 +40,7 @@ NetworkService<T>::~NetworkService() {
 	}
 }
 
-
+#pragma region PUBLIC_FUNC
 template <typename T>
 void NetworkService<T>::setup(SessionEvHandler<T>* i_handler) {
 	if (context) throw runtime_errorf("Context is already initialized.");
@@ -51,9 +51,9 @@ void NetworkService<T>::setup(SessionEvHandler<T>* i_handler) {
 }
 
 template <typename T>
-void NetworkService<T>::serve(const msec to) {
+void NetworkService<T>::serve() {
 	// LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CG_ "Serve on." _EC_, (void*)this);
-	lws_service(context, to);
+	lws_service(context, -1);
 	// LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CG_ "Serve off." _EC_, (void*)this);
 }
 
@@ -120,6 +120,7 @@ template <typename T>
 void NetworkService<T>::flush() {
 	lws_cancel_service(context);
 }
+#pragma endregion
 #pragma region PRIVATE_FUNC
 template <typename T>
 void NetworkService<T>::accumulate(Session* ses, const unsigned char* data, size_t len) {
@@ -156,6 +157,7 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 
 	int in_offset = 0;
 
+	instance->pre_proc(wsi, reason, session, in, len);
 	switch (reason) {
 		case LWS_CALLBACK_ESTABLISHED:
 		case LWS_CALLBACK_RAW_ADOPT:
@@ -339,6 +341,7 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 		default:
 			break;
 	}	
+	instance->post_proc(wsi, reason, session, in, len);
 
 	if (event == LwsCallbackParam::NONE)
 		return 0;
@@ -350,4 +353,13 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 	}
 	return 0;
 }
+#pragma endregion
+
+#pragma region PROTECTED_FUNC
+template <typename T>
+void NetworkService<T>::pre_proc(lws* wsi, callback_reason reason, void* session, void* in, size_t len) {}
+
+template <typename T>
+void NetworkService<T>::post_proc(lws* wsi, callback_reason reason, void* session, void* in, size_t len) {}
+
 #pragma endregion
