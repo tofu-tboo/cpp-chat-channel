@@ -20,27 +20,20 @@
 
 /* TODO
 - TCP ping-pong: lws_timed_callback_vh_protocol?
-- close & send queue: flush() to cancel_service
 
 */
-
-// template<typename T, typename = void>
-// struct has_wsi : std::false_type {};
-
-// template<typename T>
-// struct has_wsi<T, std::void_t<decltype(std::declval<T>().wsi)>> : std::true_type {};
 
 // NetworkService allows the packets to be limited as certain size.
 
 template <typename T>
 class NetworkService {
-	// static_assert(has_wsi<T>::value, "No wsi field found.");
 	public:
 		typedef struct {
 			private:
 				SessionEvHandler<T>* handler;
 				lws* wsi;
 				friend class NetworkService<T>;
+				msec64 last_act;
 			public:
 				T* user;
 				protocol_id prot_id;
@@ -53,6 +46,8 @@ class NetworkService {
 	private:
 		ctx* context;
 		ctx_creation_info info;
+
+		bool fl_resv;
 
 		// Queue
 		std::map<int, std::set<Session*>> session_group;
@@ -87,9 +82,10 @@ class NetworkService {
 		// ctx* get_ctx() const;
 	private:
 		void accumulate(Session* ses, const unsigned char* data, size_t len);
-	protected:
-		virtual void pre_proc(lws* wsi, callback_reason reason, void* session, void* in, size_t len);
-		virtual void post_proc(lws* wsi, callback_reason reason, void* session, void* in, size_t len);
+		void check_pong(Session* ses);
+	// protected:
+		// virtual void pre_proc(lws* wsi, callback_reason reason, void* session, void* in, size_t len);
+		// virtual void post_proc(lws* wsi, callback_reason reason, void* session, void* in, size_t len);
 };
 
 #include "network_service.tpp"

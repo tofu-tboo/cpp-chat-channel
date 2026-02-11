@@ -130,16 +130,23 @@
 }
 ```
 
+- Raw TCP Ping-Pong
+
+```
+//Ping from Server:
+0001-
+
+//Pong from Client:
+0002{}
+```
+
 ## TODO:
 
 1. JWT 검증
 2. XSS 방지
-3. 누적 버퍼 제한
-4. JSON depth 제한
-5. rate limit
-6. thread pool / kqueue
-7. props drilling => DI
-8. 네트워크 단절 방지 => ping-pong
-9. .h, .cpp 의존성 분리
-10. .h에서 선언만 이용
-11. logger
+3. rate limit
+4. thread pool / kqueue
+5. props drilling => DI
+6. .h, .cpp 의존성 분리
+7. .h에서 선언만 이용
+8. logger

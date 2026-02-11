@@ -1,5 +1,4 @@
 #include "server_base.h"
-#include <sys/time.h>
 
 template <typename U>
 ServerBase<U>::ServerBase(NetworkService<U>* di_service, const int max, const msec to): service(di_service), max_conn(max), cur_conn(0), timeout(to), is_running(true) {
@@ -26,8 +25,7 @@ bool ServerBase<U>::init() {
         });
 		// Polling
         task_runner.pushb(TS_POLL, [this]() {
-            // con_tracker->polling(timeout);
-			service->serve(); // TODO: api: ignored timeout
+			service->serve();
         });
 		// Deletion fds
         task_runner.pushb(TS_LOGIC, [this]() {

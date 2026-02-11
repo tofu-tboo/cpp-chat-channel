@@ -20,7 +20,7 @@ protocols_t NetworkService<T>::protocols[] = {
 
 
 template <typename T>
-NetworkService<T>::NetworkService(const int port): context(nullptr) {
+NetworkService<T>::NetworkService(const int port): context(nullptr), fl_resv(false) {
 	memset(&info, 0, sizeof(info));
 	info.port = port;
 	info.protocols = NetworkService<T>::protocols;
@@ -52,9 +52,8 @@ void NetworkService<T>::setup(SessionEvHandler<T>* i_handler) {
 
 template <typename T>
 void NetworkService<T>::serve() {
-	// LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CG_ "Serve on." _EC_, (void*)this);
-	lws_service(context, -1);
-	// LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CG_ "Serve off." _EC_, (void*)this);
+	LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CG_ "Serve() ------------" _EC_, (void*)this);
+	lws_service(context, 0);
 }
 
 // template <typename T>
@@ -118,7 +117,10 @@ void NetworkService<T>::close_async(Session* ses, const unsigned char* data, siz
 
 template <typename T>
 void NetworkService<T>::flush() {
-	lws_cancel_service(context);
+	if (!fl_resv) {
+		lws_cancel_service(context);
+		fl_resv = true;
+	}
 }
 #pragma endregion
 #pragma region PRIVATE_FUNC
@@ -149,6 +151,20 @@ void NetworkService<T>::accumulate(Session* ses, const unsigned char* data, size
 }
 
 template <typename T>
+void NetworkService<T>::check_pong(Session* ses) {
+	msec64 now = now_ms();
+	
+	if (ses && ses->prot_id == TCP && ses->last_act) {
+		if (now - ses->last_act > 10 * M2S) {
+			close_async(ses, std::string(""));
+		}
+		else if (now - ses->last_act > 5 * M2S) {
+			send_async(ses, std::string("-")); // ping
+		}
+	}
+}
+
+template <typename T>
 int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* session, void* in, size_t len) {
 	typename NetworkService<T>::Session* ses = static_cast<typename NetworkService<T>::Session*>(session);
 	SessionEvHandler<T>* handler;
@@ -157,10 +173,11 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 
 	int in_offset = 0;
 
-	instance->pre_proc(wsi, reason, session, in, len);
+	// instance->pre_proc(wsi, reason, session, in, len);
 	switch (reason) {
-		case LWS_CALLBACK_ESTABLISHED:
 		case LWS_CALLBACK_RAW_ADOPT:
+			lws_set_timer_usecs(wsi, U2S);
+		case LWS_CALLBACK_ESTABLISHED:
 		{
 			event = LwsCallbackParam::ACPT;
 
@@ -176,6 +193,7 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 			ses->user = new T();
 			ses->wsi = wsi;
 			ses->group = INT_MIN; //reserved
+			ses->last_act = now_ms();
 
 			{
 				std::unique_lock<std::shared_mutex> lock(instance->sr_mtx);
@@ -190,42 +208,41 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 			LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CB_ "[%14p] A Session is initialized." _EC_, (void*)instance, (void*)wsi);
 			break;
 		}
-		case LWS_CALLBACK_RECEIVE:
 		case LWS_CALLBACK_RAW_RX:
-			event = LwsCallbackParam::RECV;
-			switch (ses->prot_id)
-			{
-			case TCP:
-				{
-					// Do only length validation
-					std::string acc(static_cast<const char*>(in), len);
+		{
+			// Do only length validation
+			std::string acc(static_cast<const char*>(in), len);
 
-					if (acc.size() >= 4) {
-						uint32_t len = 0;
-						try {
-							len = std::stoul(acc.substr(0, 4), nullptr, 16);
-						} catch (...) {
-							throw runtime_errorf("Invalid frame header from Session %p", (void*)wsi);
-						}
-
-						if (len > MAX_FRAME_SIZE) {
-							throw runtime_errorf("Frame too large from Session %p", (void*)wsi);
-						} else if (len == 0) {
-							return -1;
-						} else if (acc.size() < 4 + len) {
-							return -1;
-						}
-
-						in_offset = 4;
-					}
-					break;
+			ses->last_act = now_ms();
+			if (acc.size() >= 4) {
+				uint32_t len = 0;
+				try {
+					len = std::stoul(acc.substr(0, 4), nullptr, 16);
+				} catch (...) {
+					throw runtime_errorf("Invalid frame header from Session %p", (void*)wsi);
 				}
-			default:
-				break;
+
+				if (len > MAX_FRAME_SIZE) {
+					throw runtime_errorf("Frame too large from Session %p", (void*)wsi);
+				} else if (len == 0) {
+					return 0;
+				} else if (len == 2) { // pong 0002{}
+					return 0;
+				} else if (acc.size() < 4 + len) {
+					return -1;
+				}
+
+				in_offset = 4;
 			}
+		}
+		case LWS_CALLBACK_RECEIVE:
+		{
+			event = LwsCallbackParam::RECV;
+			LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CB_ "[%14p] Frame received." _EC_, (void*)instance, (void*)wsi);
 			break;
-		case LWS_CALLBACK_SERVER_WRITEABLE:
+		}
         case LWS_CALLBACK_RAW_WRITEABLE:
+		case LWS_CALLBACK_SERVER_WRITEABLE:
 		{
 			std::unique_lock<std::shared_mutex> lock(instance->sr_mtx);
 			if (ses && !instance->send_resv[wsi].empty()) {
@@ -269,17 +286,17 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 					lws_callback_on_writable(wsi);
 				}
 			}
+			LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CB_ "[%14p] Frame sent." _EC_, (void*)instance, (void*)wsi);
             break;
 		}
-		case LWS_CALLBACK_CLOSED:
 		case LWS_CALLBACK_RAW_CLOSE:
+		case LWS_CALLBACK_CLOSED:
 		{
 			if (ses) {
 				event = LwsCallbackParam::CLOSE;
 
 				if (ses->user)
 					delete ses->user;
-				ses->user = nullptr;
 				ses->wsi = nullptr;
 
 				{
@@ -303,28 +320,31 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 		}
 		case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
 		{
+			instance->fl_resv = false;
+			LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CY_ "Start side action." _EC_, (void*)instance);
 			std::map<lws*, std::string> dels;
 			{
-				std::unique_lock<std::shared_mutex> lock(instance->sr_mtx);
+				std::unique_lock<std::shared_mutex> lock(instance->dr_mtx);
 				dels = std::move(instance->del_resv);
 			}
 			if (!dels.empty()) {
 				LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CY_ "Close asynchronously: Sessions * %d." _EC_, (void*)instance, (int)dels.size());
 				for (auto [wsi_to_close, msg]: dels) {
-					if (ses->prot_id == WS) {
+					typename NetworkService<T>::Session* ses_to_close = static_cast<typename NetworkService<T>::Session*>(lws_wsi_user(wsi_to_close));
+
+					if (ses_to_close && ses_to_close->prot_id == WS) {
 						lws_close_reason(wsi_to_close, LWS_CLOSE_STATUS_NORMAL, reinterpret_cast<unsigned char*>(msg.data()), msg.size());
 					}
 				
 					// deferred to next loop
 					lws_set_timeout(wsi_to_close, PENDING_TIMEOUT_CLOSE_ACK, LWS_TO_KILL_ASYNC);
 				}
-				// lws_close_free_wsi(wsi, LWS_CLOSE_STATUS_NORMAL); // 즉시 종료
 			}
 			break;
 		}
 		case LWS_CALLBACK_FILTER_NETWORK_CONNECTION: 
 		{
-			LOG(_CG_ "NetworkService [%14p]" _EC_ " / [%14p] Network connection detected.", (void*)instance, (void*)wsi);
+			LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CB_ "[%14p] Network connection detected." _EC_, (void*)instance, (void*)wsi);
 			// char ip[64];
 			// lws_get_peer_addresses(wsi, lws_get_socket_fd(wsi), 0, 0, ip, sizeof(ip));
 
@@ -338,10 +358,19 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 			// }
 			break;
 		}
+		case LWS_CALLBACK_TIMER:
+		{
+			LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CB_ "Check raw TCP user (%p) ping-pong." _EC_, (void*)instance, (void*)wsi);
+
+			instance->check_pong(ses);
+
+			lws_set_timer_usecs(wsi, U2S);
+			break;
+		}
 		default:
 			break;
 	}	
-	instance->post_proc(wsi, reason, session, in, len);
+	// instance->post_proc(wsi, reason, session, in, len);
 
 	if (event == LwsCallbackParam::NONE)
 		return 0;
@@ -355,11 +384,11 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 }
 #pragma endregion
 
-#pragma region PROTECTED_FUNC
-template <typename T>
-void NetworkService<T>::pre_proc(lws* wsi, callback_reason reason, void* session, void* in, size_t len) {}
+// #pragma region PROTECTED_FUNC
+// template <typename T>
+// void NetworkService<T>::pre_proc(lws* wsi, callback_reason reason, void* session, void* in, size_t len) {}
 
-template <typename T>
-void NetworkService<T>::post_proc(lws* wsi, callback_reason reason, void* session, void* in, size_t len) {}
+// template <typename T>
+// void NetworkService<T>::post_proc(lws* wsi, callback_reason reason, void* session, void* in, size_t len) {}
 
-#pragma endregion
+// #pragma endregion
