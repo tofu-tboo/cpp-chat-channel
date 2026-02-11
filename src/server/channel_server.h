@@ -2,6 +2,7 @@
 #define __CHANNEL_SERVER_H__
 
 #include <map>
+#include <mutex>
 
 #include "typed_json_frame_server.h"
 #include "chat_server.h"
@@ -29,18 +30,22 @@ class ChannelServer: public TypedJsonFrameServer<User> {
 		std::unordered_map<typename NetworkService<User>::Session*, msec64> last_act;
 
 		int ch_max_conn;
+
+		std::shared_mutex la_mtx;
+		std::shared_mutex chs_mtx;
     public:
         ChannelServer(NetworkService<User>* service, const int max_fd = 256, const int ch_max_fd = 32, const msec to = 1000);
         ~ChannelServer();
 		virtual bool init() override;
-        void report(const ChannelReport& req);
+		void switch_channel(typename NetworkService<User>::Session& ses, const ch_id_t from, const ch_id_t to);
     protected:
 
-		virtual void resolve_deletion() override;
+		// virtual void resolve_close() override;
 
 		virtual void on_accept(typename NetworkService<User>::Session& ses) override;
         virtual void on_req(const typename NetworkService<User>::Session& ses, const char* target, Json& root) override;
-		void consume_report();
+
+		virtual void free_user(typename NetworkService<User>::Session& ses) override;
 	private:
 		Channel* get_channel(const ch_id_t channel_id);
         Channel* find_or_create_channel(ch_id_t preferred_id);

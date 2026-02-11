@@ -168,6 +168,11 @@ async def handle_client(idx: int, host: str, port: int, delay: Tuple[float, floa
 
                 data = await reader.readexactly(length)
                 
+                if length == 1 and data == b'-':
+                    writer.write(make_header(b'{}') + b'{}')
+                    await writer.drain()
+                    continue
+                
                 try:
                     root = json.loads(data.decode("utf-8"))
                     if isinstance(root, list):

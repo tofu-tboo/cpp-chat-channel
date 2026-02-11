@@ -43,6 +43,12 @@ void TaskRunner<Fn>::new_session(const unsigned int cnt) {
 }
 
 template <typename Fn>
+void TaskRunner<Fn>::clear() {
+    std::lock_guard<std::mutex> lock(mtx);
+    tasks.clear();
+}
+
+template <typename Fn>
 void TaskRunner<Fn>::run() {
     std::lock_guard<std::mutex> lock(mtx);
     for (auto& session : tasks) {

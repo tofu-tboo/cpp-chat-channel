@@ -1,4 +1,5 @@
 #include <climits>
+#include <new>
 #include "network_service.h"
 
 template <typename T>
@@ -43,7 +44,7 @@ NetworkService<T>::~NetworkService() {
 #pragma region PUBLIC_FUNC
 template <typename T>
 void NetworkService<T>::setup(SessionEvHandler<T>* i_handler) {
-	if (context) throw runtime_errorf("Context is already initialized.");
+	if (context) return;
 	handler = i_handler;
 	
 	context = lws_create_context(&info);
@@ -88,17 +89,37 @@ void NetworkService<T>::broadcast_async(const unsigned char* data, size_t len) {
 }
 
 template <typename T>
-void NetworkService<T>::broadcast_group_async(int group, std::string& msg) {
-	broadcast_group_async(group, msg.c_str(), msg.size());
+void NetworkService<T>::broadcast_group_async(int group, const std::string& msg) {
+	broadcast_group_async(group, reinterpret_cast<const unsigned char*>(msg.c_str()), msg.size());
 }
 template <typename T>
 void NetworkService<T>::broadcast_group_async(int group, const unsigned char* data, size_t len) {
 	for (auto ses: this->session_group[group]) {
 		accumulate(ses, data, len);
 	}
+	flush();
 }
 
+template <typename T>
+void NetworkService<T>::change_session_group(Session* ses, int new_group) {
+    if (!ses) return;
+    std::unique_lock<std::shared_mutex> lock(sg_mtx);
+    
+    // Remove from old group if it exists
+    auto old_group_it = session_group.find(ses->group);
+    if (old_group_it != session_group.end()) {
+        old_group_it->second.erase(ses);
+    }
 
+    // Add to new group
+    ses->group = new_group;
+    session_group[new_group].insert(ses);
+}
+
+template <typename T>
+void NetworkService<T>::register_handler(Session* ses, SessionEvHandler<T>* handler) {
+	ses->handler = handler;
+}
 
 template <typename T>
 void NetworkService<T>::close_async(Session* ses, const std::string& msg) {
@@ -157,9 +178,12 @@ void NetworkService<T>::check_pong(Session* ses) {
 	if (ses && ses->prot_id == TCP && ses->last_act) {
 		if (now - ses->last_act > 10 * M2S) {
 			close_async(ses, std::string(""));
+			LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CB_ "Failed ping-pong of raw TCP user (%p)." _EC_, (void*)this, (void*)ses->wsi);
 		}
 		else if (now - ses->last_act > 5 * M2S) {
 			send_async(ses, std::string("-")); // ping
+			LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CB_ "Ping raw TCP user (%p)." _EC_, (void*)this, (void*)ses->wsi);
+			
 		}
 	}
 }
@@ -195,15 +219,13 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 			ses->group = INT_MIN; //reserved
 			ses->last_act = now_ms();
 
-			{
-				std::unique_lock<std::shared_mutex> lock(instance->sr_mtx);
-				instance->send_resv[wsi] = std::queue<std::vector<unsigned char>>();
-			}
+			std::unique_lock<std::shared_mutex> lock(instance->sr_mtx);
+			instance->send_resv[wsi] = std::queue<std::vector<unsigned char>>();
+			lock.unlock();
 
-			{
-				std::unique_lock<std::shared_mutex> lock(instance->sg_mtx);
-				instance->session_group[ses->group].insert(ses);
-			}
+			std::unique_lock<std::shared_mutex> lock2(instance->sg_mtx);
+			instance->session_group[ses->group].insert(ses);
+			lock2.unlock();
 
 			LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CB_ "[%14p] A Session is initialized." _EC_, (void*)instance, (void*)wsi);
 			break;
@@ -227,6 +249,7 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 				} else if (len == 0) {
 					return 0;
 				} else if (len == 2) { // pong 0002{}
+					LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CY_ "[%14p] Pong" _EC_, (void*)instance, (void*)wsi);
 					return 0;
 				} else if (acc.size() < 4 + len) {
 					return -1;
@@ -294,27 +317,6 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 		{
 			if (ses) {
 				event = LwsCallbackParam::CLOSE;
-
-				if (ses->user)
-					delete ses->user;
-				ses->wsi = nullptr;
-
-				{
-					std::unique_lock<std::shared_mutex> lock(instance->sr_mtx);
-					auto it = instance->send_resv.find(wsi);
-					if (it != instance->send_resv.end()) {
-						instance->send_resv.erase(it);
-					}
-				}
-
-				{
-					std::unique_lock<std::shared_mutex> lock(instance->sg_mtx);
-					auto it = instance->session_group[ses->group].find(ses);
-				
-					instance->session_group[ses->group].erase(it);
-				}
-
-				LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CB_ "[%14p] A Session is closed." _EC_, (void*)instance, (void*)wsi);
 			}
 			break;
 		}
@@ -323,10 +325,11 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 			instance->fl_resv = false;
 			LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CY_ "Start side action." _EC_, (void*)instance);
 			std::map<lws*, std::string> dels;
-			{
-				std::unique_lock<std::shared_mutex> lock(instance->dr_mtx);
-				dels = std::move(instance->del_resv);
-			}
+
+			std::unique_lock<std::shared_mutex> lock(instance->dr_mtx);
+			dels = std::move(instance->del_resv);
+			lock.unlock();
+			
 			if (!dels.empty()) {
 				LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CY_ "Close asynchronously: Sessions * %d." _EC_, (void*)instance, (int)dels.size());
 				for (auto [wsi_to_close, msg]: dels) {
@@ -360,8 +363,6 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 		}
 		case LWS_CALLBACK_TIMER:
 		{
-			LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CB_ "Check raw TCP user (%p) ping-pong." _EC_, (void*)instance, (void*)wsi);
-
 			instance->check_pong(ses);
 
 			lws_set_timer_usecs(wsi, U2S);
@@ -375,12 +376,37 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 	if (event == LwsCallbackParam::NONE)
 		return 0;
 
+	int ret = 0;
 	handler = ses->handler;
 
 	if (handler) {
-		return handler->callback({ .wsi = wsi, .event = event, .user = ses, .in = static_cast<unsigned char*>(in) + in_offset, .len = len - in_offset, .prot_id = ses->prot_id });
+		ret = handler->callback({ .wsi = wsi, .event = event, .user = ses, .in = static_cast<unsigned char*>(in) + in_offset, .len = len - in_offset, .prot_id = ses->prot_id });
 	}
-	return 0;
+
+	// Deferred cleanup
+	if (event == LwsCallbackParam::CLOSE) {
+		if (ses->user)
+			delete ses->user;
+		ses->wsi = nullptr;
+
+		std::unique_lock<std::shared_mutex> lock(instance->sr_mtx);
+		auto it = instance->send_resv.find(wsi);
+		if (it != instance->send_resv.end()) {
+			instance->send_resv.erase(it);
+		}
+		lock.unlock();
+
+		std::unique_lock<std::shared_mutex> lock2(instance->sg_mtx);
+		// Remove from the group it belongs to (free_user might have changed it to INT_MIN)
+		auto it2 = instance->session_group[ses->group].find(ses);
+		if (it2 != instance->session_group[ses->group].end())
+			instance->session_group[ses->group].erase(it2);
+		lock2.unlock();
+
+		LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CB_ "[%14p] A Session is closed." _EC_, (void*)instance, (void*)wsi);
+	}
+
+	return ret;
 }
 #pragma endregion
 

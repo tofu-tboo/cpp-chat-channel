@@ -34,7 +34,6 @@ typedef union {
 } UReportDto;
 
 typedef struct {
-	ch_id_t ch;
 	uint64_t uid;
 	msec64 join_t;
 	char* name; // needed to free

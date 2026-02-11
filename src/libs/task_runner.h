@@ -32,6 +32,7 @@ class TaskRunner {
         void popb(const unsigned int which);
 
         void new_session(const unsigned int cnt);
+		void clear();
         
         void run();
     private:

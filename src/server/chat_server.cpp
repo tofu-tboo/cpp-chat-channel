@@ -13,6 +13,7 @@ ChatServer::~ChatServer() {
 bool ChatServer::init() {
 	if (TypedJsonFrameServer::init()) {
 		task_runner.pushb(TS_PRE, [this]() {
+			std::unique_lock<std::shared_mutex> lock(cm_mtx);
 			cur_msgs.clear();
 		});
 		task_runner.pushf(TS_LOGIC, [this]() {
@@ -25,19 +26,14 @@ bool ChatServer::init() {
 }
 
 #pragma region PROTECTED_FUNC
-void ChatServer::resolve_deletion() {
-    for (auto* session : next_deletion) {
-		User* user = session->user;
-		if (user->name) free(user->name);
-		user->name = nullptr;
-        service->close_async(session, "Server closed.");
-        LOG("Normally Disconnected: user %p", user);
-    }
-    next_deletion.clear();
-}
+
 
 void ChatServer::resolve_timestamps() {
+	std::unique_lock<std::shared_mutex> lock(mq_mtx);
+	std::unique_lock<std::shared_mutex> lock2(cm_mtx);
     auto local_q = mq.pop_all();
+	lock.unlock();
+
 	while (!local_q.empty()) {
         auto item = std::move(local_q.front());
         local_q.pop();
@@ -48,6 +44,8 @@ void ChatServer::resolve_timestamps() {
 
 void ChatServer::resolve_broadcast() {
     Json cur_window(json_array());
+	std::shared_lock<std::shared_mutex> lock(cm_mtx);
+
     for (const auto& [timestamp, req] : cur_msgs) {
 		std::string type;
 		switch (req.second.type)
@@ -81,12 +79,23 @@ void ChatServer::resolve_broadcast() {
 		}
 		
     }
+	lock.unlock();
+
 	if (json_array_size(cur_window.get()) == 0) return;
-	
+
     CharDump dumped(json_dumps(cur_window.get(), 0));
     if (dumped) {
 		service->broadcast_async(std::string(dumped.get()));
     }
+}
+
+void ChatServer::on_accept(typename NetworkService<User>::Session& ses) {
+	TypedJsonFrameServer<User>::on_accept(ses);
+
+	char user_name[20];
+	snprintf(user_name, sizeof(user_name), "guest_%013llu", (unsigned long long)now_ms());
+
+	ses.user->name = strdup(user_name);
 }
 
 void ChatServer::on_req(const typename NetworkService<User>::Session& ses, const char* target, Json& root) {
@@ -105,6 +114,8 @@ void ChatServer::on_req(const typename NetworkService<User>::Session& ses, const
 			else user_name = "unknown";
 
 			MessageReqDto msg_req = { .type = USER, .text = std::string(text), .timestamp = timestamp, .user_name = user_name };
+
+			std::unique_lock<std::shared_mutex> lock(mq_mtx);
 			mq.push({const_cast<typename NetworkService<User>::Session*>(&ses), msg_req});
 		} __UNPACK_FAIL {
 			iERROR("Malformed JSON message, missing text field.");

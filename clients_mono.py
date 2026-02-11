@@ -138,6 +138,11 @@ async def handle_client(idx: int, host: str, port: int, delay: Tuple[float, floa
 
                 data = await reader.readexactly(length)
                 
+                if length == 1 and data == b'-':
+                    writer.write(make_header(b'{}') + b'{}')
+                    await writer.drain()
+                    continue
+                
                 try:
                     root = json.loads(data.decode("utf-8"))
                     if isinstance(root, list):
@@ -207,8 +212,8 @@ def main():
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=4800)
     parser.add_argument("--clients", type=int, default=3, help="number of simulated clients")
-    parser.add_argument("--min-delay", type=float, default=11)
-    parser.add_argument("--max-delay", type=float, default=12.0)
+    parser.add_argument("--min-delay", type=float, default=0.2)
+    parser.add_argument("--max-delay", type=float, default=2.0)
     parser.add_argument("--min-len", type=int, default=5)
     parser.add_argument("--max-len", type=int, default=40)
     args = parser.parse_args()

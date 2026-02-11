@@ -185,7 +185,18 @@ static bool recv_frames(int fd, std::string& acc) {
 
         if (acc.size() < 4 + len) break;
         std::string payload = acc.substr(4, len);
-        display_message(payload);
+
+        if (len == 1 && payload == "-") {
+            // PING received, send PONG
+            send_frame(fd, "{}");
+            
+            std::cout << "\r\033[K"; // Clear current line
+            std::cout << _CG_ << "<- PING received, -> PONG sent" << _EC_ << "\r\n";
+            refresh_line();
+        } else {
+            display_message(payload);
+        }
+
         acc.erase(0, 4 + len);
     }
     return true;

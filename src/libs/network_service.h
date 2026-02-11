@@ -72,13 +72,17 @@ class NetworkService {
 
 		void broadcast_async(const std::string& msg);
 		void broadcast_async(const unsigned char* data, size_t len);
-		void broadcast_group_async(int group, std::string& msg);
+		void broadcast_group_async(int group, const std::string& msg);
 		void broadcast_group_async(int group, const unsigned char* data, size_t len);
+
+		void change_session_group(Session* ses, int new_group);
+		void register_handler(Session* ses, SessionEvHandler<T>* handler);
 
 		void close_async(Session* ses, const std::string& msg);
 		void close_async(Session* ses, const unsigned char* data, size_t len);
 
 		void flush();
+
 		// ctx* get_ctx() const;
 	private:
 		void accumulate(Session* ses, const unsigned char* data, size_t len);

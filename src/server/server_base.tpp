@@ -21,7 +21,8 @@ bool ServerBase<U>::init() {
 		task_runner.new_session(TS_COUNT);
 		// Cleanup Qs
         task_runner.pushb(TS_PRE, [this]() {
-            // next_deletion.clear();
+			std::unique_lock<std::shared_mutex> lock(nd_mtx);
+			nxt_close.clear();
         });
 		// Polling
         task_runner.pushb(TS_POLL, [this]() {
@@ -29,7 +30,7 @@ bool ServerBase<U>::init() {
         });
 		// Deletion fds
         task_runner.pushb(TS_LOGIC, [this]() {
-            // resolve_deletion();
+            resolve_close();
         });
 
 		return true;
@@ -38,16 +39,13 @@ bool ServerBase<U>::init() {
 }
 
 template <typename U>
-ServerBase<U>::~ServerBase() {
-    // next_deletion.clear();
-}
+ServerBase<U>::~ServerBase() {}
 
 template <typename U>
 void ServerBase<U>::proc() {
     while (is_running) {
         try {
             task_runner.run();
-            // frame();
         } catch(const std::exception& e) {
             iERROR("%s", e.what());
         }
@@ -60,18 +58,20 @@ void ServerBase<U>::stop() {
 }
 
 #pragma region PRIVATE_FUNC
-
 #pragma endregion
 
 #pragma region PROTECTED_FUNC
-
+// template <typename U>
+// void ServerBase<U>::cl_session(typename NetworkService<U>::Session* ses) {
+// 	service->close_async(ses, std::string("Server closed connection."));
+// }
 template <typename U>
-void ServerBase<U>::resolve_deletion() {
-    for (typename NetworkService<U>::Session* user : next_deletion) {
-        service->close_async(user, std::string("Server closed connection."));
-		LOG("Normally Disconnected: user %p", user);
+void ServerBase<U>::resolve_close() {
+	std::shared_lock<std::shared_mutex> lock(nd_mtx);
+    for (typename NetworkService<U>::Session* ses : nxt_close) {
+		service->close_async(ses, std::string("Server closed connection."));
+        // cl_session(ses);
     }
-    next_deletion.clear();
 }
 
 template <typename U>
@@ -85,11 +85,11 @@ void ServerBase<U>::on_accept(typename NetworkService<U>::Session& ses) {
 	} catch (const std::exception& e) {
 		if (const auto* cre = try_get_coded_error(e)) {
 			if (cre->code == POOL_FULL) {
-				service->close_async(&ses, std::string(R"({"type":"error","message":"Server is full."})"));
+				service->send_async(&ses, std::string(R"({"type":"error","message":"Server is full."})"));
 			}
 		}
         iERROR("%s", e.what());
-        // next_deletion.insert(&ses);
+		resv_close(&ses);
 		return;
     }
 
@@ -98,6 +98,7 @@ void ServerBase<U>::on_accept(typename NetworkService<U>::Session& ses) {
 template <typename U>
 void ServerBase<U>::on_close(typename NetworkService<U>::Session& ses) {
 	cur_conn--;
+	free_user(ses);
 	LOG("Closed connection: user %p", ses.user);
 }
 
@@ -107,8 +108,7 @@ void ServerBase<U>::on_recv(typename NetworkService<U>::Session& ses, const Recv
         on_frame(ses, std::string(reinterpret_cast<const char*>(stream.data), stream.len));
     } catch (const std::exception& e) {
         iERROR("%s", e.what());
-		service->close_async(&ses, std::string(""));
-        // next_deletion.insert(&ses);
+		resv_close(&ses);
     }
 }
 
@@ -118,4 +118,12 @@ void ServerBase<U>::on_send(typename NetworkService<U>::Session& ses) {}
 // User ServerBase<U>::translate(LwsCallbackParam&& param) {
 	
 // }
+template <typename U>
+void ServerBase<U>::free_user(typename NetworkService<U>::Session& ses) {}
+
+template <typename U>
+void ServerBase<U>::resv_close(typename NetworkService<U>::Session* ses) {
+	std::unique_lock<std::shared_mutex> lock(nd_mtx);
+	nxt_close.insert(ses);
+}
 #pragma endregion

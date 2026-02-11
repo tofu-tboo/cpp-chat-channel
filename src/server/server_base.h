@@ -62,13 +62,15 @@ class ServerBase: public SessionEvHandler<U> {
 
         msec timeout;
 
-        std::unordered_set<typename NetworkService<U>::Session*> next_deletion;
+        std::unordered_set<typename NetworkService<U>::Session*> nxt_close;
+
+		std::shared_mutex nd_mtx;
 
         TaskRunner<void()> task_runner;
         std::atomic<bool> is_running;
 
 		unsigned int max_conn;
-		unsigned int cur_conn;
+		std::atomic<unsigned int> cur_conn;
     public:
         ServerBase(NetworkService<U>* di_service, const int max_fd = 256, const msec to = 1000);
         ~ServerBase();
@@ -77,18 +79,20 @@ class ServerBase: public SessionEvHandler<U> {
         virtual void proc(); // 외부에서의 서버 진입점
         void stop();
 
-        // virtual void report(const ChannelReport& req);
     protected:
+        void resolve_close();
 
-        // Tasks
-        virtual void resolve_deletion();
+		// virtual void cl_session(typename NetworkService<U>::Session* ses);
 
 		virtual void on_frame(const typename NetworkService<U>::Session& ses, const std::string& frame) = 0;
         virtual void on_accept(typename NetworkService<U>::Session& ses);
-		virtual void on_close(typename NetworkService<U>::Session& ses);
-		virtual void on_recv(typename NetworkService<U>::Session& ses, const RecvStream& stream);
+		virtual void on_close(typename NetworkService<U>::Session& ses) final;
+		virtual void on_recv(typename NetworkService<U>::Session& ses, const RecvStream& stream) final;
 		virtual void on_send(typename NetworkService<U>::Session& ses);
 		// virtual User translate(LwsCallbackParam&& param);
+
+		virtual void free_user(typename NetworkService<U>::Session& ses);
+		void resv_close(typename NetworkService<U>::Session* ses);
 };
 
 #include "server_base.tpp"

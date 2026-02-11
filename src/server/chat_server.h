@@ -14,20 +14,22 @@
 
 class ChatServer : public TypedJsonFrameServer<User> {
 	protected:
-		std::unordered_set<typename NetworkService<User>::Session*> users;
 		std::multimap<msec64, std::pair<typename NetworkService<User>::Session*, MessageReqDto>> cur_msgs; // timestamped messages
 		ProducerConsumerQueue<std::pair<typename NetworkService<User>::Session*, MessageReqDto>> mq; // message queue (raw JSON strings)
+
+		std::shared_mutex mq_mtx;
+		std::shared_mutex cm_mtx;
 	public:
 		ChatServer(NetworkService<User>* service, const int max_fd = 32, const msec to = 1000);
 		~ChatServer();
 		virtual bool init() override;
 	protected:
 
-		virtual void resolve_deletion() override;
 		virtual void resolve_timestamps();
         virtual void resolve_broadcast();
 
 		// Hooks
+		virtual void on_accept(typename NetworkService<User>::Session& ses) override;
 		virtual void on_req(const typename NetworkService<User>::Session& ses, const char* target, Json& root) override; // handle both pure json & payload
 };
 
