@@ -90,6 +90,8 @@ class ServerBase: public SessionEvHandler<U> {
 		virtual void on_recv(typename NetworkService<U>::Session& ses, const RecvStream& stream) final;
 		virtual void on_send(typename NetworkService<U>::Session& ses);
 		// virtual User translate(LwsCallbackParam&& param);
+		virtual void on_rate_limit_packet_drop(typename NetworkService<U>::Session& ses);
+
 
 		virtual void free_user(typename NetworkService<U>::Session& ses);
 		void resv_close(typename NetworkService<U>::Session* ses);

@@ -2,7 +2,7 @@
 #include "../libs/util.h"
 #include "user_manager.h"
 
-ChannelServer::ChannelServer(NetworkService<User>* service, const int max, const int ch_max, const msec to): TypedJsonFrameServer(service, max, to), ch_max_conn(ch_max) {}
+ChannelServer::ChannelServer(NetworkService<User>* service, const int max, ChannelFactory* factory, const msec to): TypedJsonFrameServer(service, max, to), channel_factory(factory) {}
 
 ChannelServer::~ChannelServer() {
     for (auto& [_, channel] : channels) {
@@ -19,6 +19,7 @@ ChannelServer::~ChannelServer() {
 	// 	}
     // }
     channels.clear();
+	if (channel_factory) delete channel_factory;
 }
 
 bool ChannelServer::init() {
@@ -78,7 +79,6 @@ void ChannelServer::on_req(const typename NetworkService<User>::Session& ses, co
     case hash("JOIN"):
         {
             ch_id_t channel_id;
-			msec64 timestamp = now_ms();
 			const char* user_name;
 			__UNPACK_JSON(root, "{s:i,s:s}", "channel_id", &channel_id, "user_name", &user_name) {
 				if (from->name) free(from->name);
@@ -116,7 +116,7 @@ Channel* ChannelServer::get_channel(const ch_id_t channel_id) {
 	lock.unlock();
 
 	std::unique_lock<std::shared_mutex> lock2(chs_mtx);
-	channels[channel_id] = new Channel(service, this, channel_id, ch_max_conn);
+	channels[channel_id] = channel_factory->create(this, channel_id);
 	channels[channel_id]->init();
 	LOG(_CG_ "Channel %u created." _EC_, channel_id);
 	return channels[channel_id];

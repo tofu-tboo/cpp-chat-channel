@@ -6,6 +6,7 @@
 #include "server_factory.h"
 #include "channel_server.h"
 #include "../libs/network_service.h"
+#include "channel_factory.h"
 
 ChannelServer* g_server = nullptr;
 
@@ -35,7 +36,8 @@ int main(int argc, char* argv[]) {
     signal(SIGTERM, signal_handler);
 
 	NetworkService<User> service(port);
-	g_server = ServerFactory::create<User, ChannelServer>(&service, lobby_max_fd, ch_max_fd);
+	ChannelFactory* factory = new ChannelFactory(&service, ch_max_fd);
+	g_server = ServerFactory::create<User, ChannelServer>(&service, lobby_max_fd, factory);
 
     g_server->proc();
 

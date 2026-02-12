@@ -23,10 +23,14 @@ int SessionEvHandler<T>::callback(const LwsCallbackParam& param) {
 			case LwsCallbackParam::CLOSE:
 				on_close(ses);
 				break;
+			case LwsCallbackParam::RL_DROP:
+				on_rate_limit_packet_drop(ses);
+				break;
 			default:
 				break;
 		}
-	} catch (...) {
+	} catch (std::exception& e) {
+        ERROR("%s", e.what());
 		return -1;
 	}
 	return 0;

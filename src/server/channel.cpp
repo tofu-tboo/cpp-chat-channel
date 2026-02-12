@@ -48,40 +48,32 @@ void Channel::join(typename NetworkService<User>::Session& ses, const MessageReq
 }
 
 void Channel::leave_and_logging(typename NetworkService<User>::Session& ses) {
-	try {		
-		User* user = ses.user;
-		MessageReqDto sys_msg = { .type = SYSTEM, .text = "leave", .timestamp = now_ms(), .channel_id = channel_id };
+	User* user = ses.user;
+	MessageReqDto sys_msg = { .type = SYSTEM, .text = "leave", .timestamp = now_ms(), .channel_id = channel_id };
 
 
-		if (user->name) sys_msg.user_name = user->name;
-		else if (ses.group != INT_MIN) {
-			resv_close(&ses);
-			return;
-		}
-
-		leave(ses, sys_msg);
-	} catch (const std::exception& e) {
-		iERROR("Logging failed: %s", e.what());
+	if (user->name) sys_msg.user_name = user->name;
+	else if (ses.group != INT_MIN) {
+		resv_close(&ses);
+		return;
 	}
+
+	leave(ses, sys_msg);
 }
 
 void Channel::join_and_logging(typename NetworkService<User>::Session& ses, bool re) {
-	try {		
-		User* user = ses.user;
-		MessageReqDto sys_msg = { .type = SYSTEM, .timestamp = now_ms(), .channel_id = channel_id };
+	User* user = ses.user;
+	MessageReqDto sys_msg = { .type = SYSTEM, .timestamp = now_ms(), .channel_id = channel_id };
 
-		
-		if (user->name) sys_msg.user_name = user->name;
-		else {
-			return;
-		}
+	
+	if (user->name) sys_msg.user_name = user->name;
+	else {
+		return;
+	}
 
-		sys_msg.text = re ? "rejoin" : "join";
+	sys_msg.text = re ? "rejoin" : "join";
 
-		join(ses, sys_msg);
-	} catch (const std::exception& e) {
-        iERROR("Logging failed: %s", e.what());
-    }
+	join(ses, sys_msg);
 }
 
 bool Channel::ping_pool() {
@@ -107,7 +99,6 @@ void Channel::on_req(const typename NetworkService<User>::Session& ses, const ch
     case hash("JOIN"):
         {
 			ch_id_t ch_to;
-			msec64 timestamp = now_ms();
 			__UNPACK_JSON(root, "{s:i}", "channel_id", &ch_to) {
 				if (ch_to == channel_id) return;
 				

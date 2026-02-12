@@ -88,9 +88,7 @@ void ServerBase<U>::on_accept(typename NetworkService<U>::Session& ses) {
 				service->send_async(&ses, std::string(R"({"type":"error","message":"Server is full."})"));
 			}
 		}
-        iERROR("%s", e.what());
-		resv_close(&ses);
-		return;
+		throw e;
     }
 
 }
@@ -104,16 +102,15 @@ void ServerBase<U>::on_close(typename NetworkService<U>::Session& ses) {
 
 template <typename U>
 void ServerBase<U>::on_recv(typename NetworkService<U>::Session& ses, const RecvStream& stream) {
-	try {
-        on_frame(ses, std::string(reinterpret_cast<const char*>(stream.data), stream.len));
-    } catch (const std::exception& e) {
-        iERROR("%s", e.what());
-		resv_close(&ses);
-    }
+    on_frame(ses, std::string(reinterpret_cast<const char*>(stream.data), stream.len));
 }
 
 template <typename U>
 void ServerBase<U>::on_send(typename NetworkService<U>::Session& ses) {}
+
+template <typename U>
+void ServerBase<U>::on_rate_limit_packet_drop(typename NetworkService<U>::Session& ses) {}
+
 
 // User ServerBase<U>::translate(LwsCallbackParam&& param) {
 	

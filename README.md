@@ -145,8 +145,8 @@
 1. JWT 검증
 2. XSS 방지
 3. rate limit
-4. thread pool / kqueue
-5. props drilling => DI
-6. .h, .cpp 의존성 분리
-7. .h에서 선언만 이용
-8. logger
+4. .h, .cpp 의존성 분리
+5. .h에서 선언만 이용
+6. logger
+7. black list
+8. Server class 구조 변경: json 기반 통신을 컴포넌트로 분리 (bytes, yaml, xml로 확장 가능하게)

@@ -189,6 +189,15 @@ void NetworkService<T>::check_pong(Session* ses) {
 }
 
 template <typename T>
+void NetworkService<T>::set_timeout(Session* ses, int flag) {
+	if (ses) {
+		ses->to_flag = flag;
+		if (flag & TO_EV_PING_PONG)
+			lws_set_timer_usecs(ses->wsi, U2S);
+	}
+}
+
+template <typename T>
 int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* session, void* in, size_t len) {
 	typename NetworkService<T>::Session* ses = static_cast<typename NetworkService<T>::Session*>(session);
 	SessionEvHandler<T>* handler;
@@ -200,7 +209,7 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 	// instance->pre_proc(wsi, reason, session, in, len);
 	switch (reason) {
 		case LWS_CALLBACK_RAW_ADOPT:
-			lws_set_timer_usecs(wsi, U2S);
+			set_timeout(ses, TO_EV_PING_PONG);
 		case LWS_CALLBACK_ESTABLISHED:
 		{
 			event = LwsCallbackParam::ACPT;
@@ -218,6 +227,7 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 			ses->wsi = wsi;
 			ses->group = INT_MIN; //reserved
 			ses->last_act = now_ms();
+			ses->tokens = RL_BURST_MAX; // 초기 접속 시 최대치 부여
 
 			std::unique_lock<std::shared_mutex> lock(instance->sr_mtx);
 			instance->send_resv[wsi] = std::queue<std::vector<unsigned char>>();
@@ -261,6 +271,17 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 		case LWS_CALLBACK_RECEIVE:
 		{
 			event = LwsCallbackParam::RECV;
+
+			if (ses->tokens == RL_BURST_MAX)
+				instance->set_timeout(ses, TO_EV_TOKEN_REFILL);
+			else if (ses->tokens == 0) {
+				event = LwsCallbackParam::RL_DROP;
+				lws_rx_flow_control(wsi, 0);
+				break;
+			}
+			
+			ses->tokens--;
+
 			LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CB_ "[%14p] Frame received." _EC_, (void*)instance, (void*)wsi);
 			break;
 		}
@@ -268,7 +289,7 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 		case LWS_CALLBACK_SERVER_WRITEABLE:
 		{
 			std::unique_lock<std::shared_mutex> lock(instance->sr_mtx);
-			if (ses && !instance->send_resv[wsi].empty()) {
+			if (!instance->send_resv[wsi].empty()) {
 				event = LwsCallbackParam::SEND;
 			
 				if (lws_partial_buffered(wsi)) {
@@ -315,9 +336,7 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 		case LWS_CALLBACK_RAW_CLOSE:
 		case LWS_CALLBACK_CLOSED:
 		{
-			if (ses) {
-				event = LwsCallbackParam::CLOSE;
-			}
+			event = LwsCallbackParam::CLOSE;
 			break;
 		}
 		case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
@@ -363,9 +382,15 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 		}
 		case LWS_CALLBACK_TIMER:
 		{
-			instance->check_pong(ses);
-
-			lws_set_timer_usecs(wsi, U2S);
+			if (ses->to_flag & TO_EV_PING_PONG) {
+				instance->check_pong(ses);
+				instance->set_timeout(ses, TO_EV_PING_PONG);
+			}
+			if (ses->to_flag & TO_EV_TOKEN_REFILL) {
+				ses->to_flag ^= TO_EV_TOKEN_REFILL;
+				ses->tokens = RL_BURST_MAX;
+				lws_rx_flow_control(wsi, 1);
+			}
 			break;
 		}
 		default:
@@ -377,9 +402,8 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 		return 0;
 
 	int ret = 0;
-	handler = ses->handler;
-
-	if (handler) {
+	if (ses) {
+		handler = ses->handler;
 		ret = handler->callback({ .wsi = wsi, .event = event, .user = ses, .in = static_cast<unsigned char*>(in) + in_offset, .len = len - in_offset, .prot_id = ses->prot_id });
 	}
 

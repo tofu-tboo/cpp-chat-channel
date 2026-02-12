@@ -39,7 +39,7 @@ typedef short protocol_id;
 
 typedef struct {
 	lws* wsi;
-	enum { NONE, ACPT, RECV, SEND, CLOSE } event;
+	enum { NONE, ACPT, RECV, SEND, CLOSE, RL_DROP } event;
 	void* user;
 	unsigned char* in;
 	size_t len;

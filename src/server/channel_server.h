@@ -8,6 +8,7 @@
 #include "chat_server.h"
 #include "channel.h"
 #include "../libs/json.h"
+#include "channel_factory.h"
 
 
 /* Requirement of ChannelServer
@@ -29,12 +30,12 @@ class ChannelServer: public TypedJsonFrameServer<User> {
         std::mutex report_mtx;
 		std::unordered_map<typename NetworkService<User>::Session*, msec64> last_act;
 
-		int ch_max_conn;
+		ChannelFactory* channel_factory;
 
 		std::shared_mutex la_mtx;
 		std::shared_mutex chs_mtx;
     public:
-        ChannelServer(NetworkService<User>* service, const int max_fd = 256, const int ch_max_fd = 32, const msec to = 1000);
+        ChannelServer(NetworkService<User>* service, const int max_fd, ChannelFactory* factory, const msec to = 1000);
         ~ChannelServer();
 		virtual bool init() override;
 		void switch_channel(typename NetworkService<User>::Session& ses, const ch_id_t from, const ch_id_t to);
