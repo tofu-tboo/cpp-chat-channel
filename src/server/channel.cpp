@@ -22,7 +22,7 @@ void Channel::leave(typename NetworkService<User>::Session& ses, const MessageRe
 		empty_since = now_ms();
 	}
 
-	service->change_session_group(&ses, INT_MIN);
+	// service->change_session_group(&ses, INT_MIN);
 
 	std::unique_lock<std::shared_mutex> lock(mq_mtx);
 	mq.push({&ses, msg});
@@ -108,7 +108,7 @@ void Channel::on_req(const typename NetworkService<User>::Session& ses, const ch
         {
 			ch_id_t ch_to;
 			msec64 timestamp = now_ms();
-			__UNPACK_JSON(root, "{s:I}", "channel_id", &ch_to) {
+			__UNPACK_JSON(root, "{s:i}", "channel_id", &ch_to) {
 				if (ch_to == channel_id) return;
 				
 				server->switch_channel(const_cast<typename NetworkService<User>::Session&>(ses), channel_id, ch_to);

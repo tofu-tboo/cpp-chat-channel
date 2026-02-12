@@ -80,7 +80,7 @@ void ChannelServer::on_req(const typename NetworkService<User>::Session& ses, co
             ch_id_t channel_id;
 			msec64 timestamp = now_ms();
 			const char* user_name;
-			__UNPACK_JSON(root, "{s:I,s:s}", "channel_id", &channel_id, "user_name", &user_name) {
+			__UNPACK_JSON(root, "{s:i,s:s}", "channel_id", &channel_id, "user_name", &user_name) {
 				if (from->name) free(from->name);
 				from->name = strdup(user_name);
 
