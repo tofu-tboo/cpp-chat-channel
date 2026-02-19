@@ -26,6 +26,8 @@
 #include "../libs/socket.h"
 #include "../libs/task_runner.h"
 #include "../libs/network_service.h"
+#include "../libs/msg_parser.h"
+
 
 /*
 All servers have only one shared file descriptor listening on a port.
@@ -52,12 +54,13 @@ class ServerBase: public SessionEvHandler<U> {
     protected:
         int branch_id; // branch's id
 		NetworkService<U>* service;
+		IMsgParser<Request>* msg_parser;
 
         enum TaskSession {
-            TS_PRE = 0,   // 전처리: 큐 소비, 버퍼 정리
-            TS_POLL = 1,  // I/O: 폴링, 이벤트 처리
-            TS_LOGIC = 2, // 로직: 메시지 처리, 브로드캐스트, 삭제
-            TS_COUNT = 3
+            TS_PRE = 0,   	// 전처리: 큐 소비, 버퍼 정리
+            TS_POLL,  		// I/O: 폴링, 이벤트 처리
+            TS_LOGIC, 		// 로직: 메시지 처리, 브로드캐스트, 삭제
+            TS_COUNT
         };
 
         msec timeout;
@@ -72,8 +75,8 @@ class ServerBase: public SessionEvHandler<U> {
 		unsigned int max_conn;
 		std::atomic<unsigned int> cur_conn;
     public:
-        ServerBase(NetworkService<U>* di_service, const int max_fd = 256, const msec to = 1000);
-        ~ServerBase();
+        ServerBase(NetworkService<U>* di_service, IMsgParser<Request>* processor, const int max_fd = 256, const msec to = 1000);
+        virtual ~ServerBase();
 
 		virtual bool init();
         virtual void proc(); // 외부에서의 서버 진입점
@@ -82,15 +85,15 @@ class ServerBase: public SessionEvHandler<U> {
     protected:
         void resolve_close();
 
-		// virtual void cl_session(typename NetworkService<U>::Session* ses);
-
-		virtual void on_frame(const typename NetworkService<U>::Session& ses, const std::string& frame) = 0;
         virtual void on_accept(typename NetworkService<U>::Session& ses);
 		virtual void on_close(typename NetworkService<U>::Session& ses) final;
 		virtual void on_recv(typename NetworkService<U>::Session& ses, const RecvStream& stream) final;
 		virtual void on_send(typename NetworkService<U>::Session& ses);
 		// virtual User translate(LwsCallbackParam&& param);
 		virtual void on_rate_limit_packet_drop(typename NetworkService<U>::Session& ses);
+
+		virtual void handle_request(typename NetworkService<U>::Session& ses, std::unique_ptr<Request> req) = 0;
+
 
 
 		virtual void free_user(typename NetworkService<U>::Session& ses);

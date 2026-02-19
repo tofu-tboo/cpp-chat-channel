@@ -2,16 +2,17 @@
 
 #include "chat_server.h"
 #include "user_manager.h"
+#include "../libs/json_parser.h"
 
-
-ChatServer::ChatServer(NetworkService<User>* service, const int max_fd, const msec to): TypedJsonFrameServer(service, max_fd, to) {}
+ChatServer::ChatServer(NetworkService<User>* service, const int max_fd, const msec to)
+	: ServerBase<User>(service, new JsonParser(), max_fd, to) {}
 
 ChatServer::~ChatServer() {
 	cur_msgs.clear();
 }
 
 bool ChatServer::init() {
-	if (TypedJsonFrameServer::init()) {
+	if (ServerBase<User>::init()) {
 		task_runner.pushb(TS_PRE, [this]() {
 			std::unique_lock<std::shared_mutex> lock(cm_mtx);
 			cur_msgs.clear();
@@ -90,7 +91,7 @@ void ChatServer::resolve_broadcast() {
 }
 
 void ChatServer::on_accept(typename NetworkService<User>::Session& ses) {
-	TypedJsonFrameServer<User>::on_accept(ses);
+	ServerBase<User>::on_accept(ses);
 
 	char user_name[20];
 	snprintf(user_name, sizeof(user_name), "guest_%013llu", (unsigned long long)now_ms());
@@ -98,31 +99,28 @@ void ChatServer::on_accept(typename NetworkService<User>::Session& ses) {
 	ses.user->name = strdup(user_name);
 }
 
-void ChatServer::on_req(const typename NetworkService<User>::Session& ses, const char* target, Json& root) {
-	const User& from = *ses.user;
-	switch (hash(target))
-	{
-	case hash("message"):
-	case hash("Message"):
-	case hash("MESSAGE"): 
-	{
-		const char* text;
-		msec64 timestamp = now_ms();
-		__UNPACK_JSON(root, "{s:s}", "text", &text) {
+void ChatServer::handle_request(typename NetworkService<User>::Session& ses, std::unique_ptr<Request> req) {
+	JsonRequest* json_req = dynamic_cast<JsonRequest*>(req.get());
+	if (!json_req) return;
+
+	ChatReqDto dto(&json_req->root);
+
+	switch_hash(dto.type.c_str()) {
+		case_hash("message"):
+		case_hash("Message"):
+		case_hash("MESSAGE"):
+		{
+			const User* from = ses.user;
 			std::string user_name;
-			if (from.name) user_name = from.name;
+			if (from->name) user_name = from->name;
 			else user_name = "unknown";
 
-			MessageReqDto msg_req = { .type = USER, .text = std::string(text), .timestamp = timestamp, .user_name = user_name };
+			MessageReqDto msg_req = { .type = USER, .text = dto.text, .timestamp = dto.timestamp, .user_name = user_name };
 
 			std::unique_lock<std::shared_mutex> lock(mq_mtx);
 			mq.push({const_cast<typename NetworkService<User>::Session*>(&ses), msg_req});
-		} __UNPACK_FAIL {
-			iERROR("Malformed JSON message, missing text field.");
-			return;
+			break;
 		}
-		break;
-	}
 	default:
 		break;
 	}

@@ -209,16 +209,16 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 	// instance->pre_proc(wsi, reason, session, in, len);
 	switch (reason) {
 		case LWS_CALLBACK_RAW_ADOPT:
-			set_timeout(ses, TO_EV_PING_PONG);
+			instance->set_timeout(ses, TO_EV_PING_PONG);
 		case LWS_CALLBACK_ESTABLISHED:
 		{
 			event = LwsCallbackParam::ACPT;
 
-			switch (hash(lws_get_protocol(wsi)->name)) {
-				case hash(WS_NAME):
+			switch_hash(lws_get_protocol(wsi)->name) {
+				case_hash(WS_NAME):
 					ses->prot_id = WS;
 					break;
-				case hash(TCP_NAME):
+				case_hash(TCP_NAME):
 					ses->prot_id = TCP;
 					break;
 			}

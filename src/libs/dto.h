@@ -4,9 +4,8 @@
 #include <string>
 
 #include "socket.h"
+#include "types.h"
 #include "util.h"
-
-typedef unsigned int ch_id_t;
 
 enum MsgType {
 	USER,

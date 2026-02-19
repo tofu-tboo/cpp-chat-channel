@@ -6,6 +6,7 @@ typedef unsigned int ch_id_t;
 #include <thread>
 #include <atomic>
 
+#include "../libs/chat_req_dto.h"
 #include "chat_server.h"
 
 class ChannelServer; // Forward declaration
@@ -37,7 +38,7 @@ class Channel: public ChatServer {
     protected: // Sequencially called in proc() => no needed mutex
 
         virtual void on_accept(typename NetworkService<User>::Session& client) override;
-        virtual void on_req(const typename NetworkService<User>::Session& from, const char* target, Json& root) override;
+        virtual void handle_request(typename NetworkService<User>::Session& ses, std::unique_ptr<Request> req) override;
         virtual void resolve_broadcast() override;
 
 		virtual void free_user(typename NetworkService<User>::Session& ses) override;

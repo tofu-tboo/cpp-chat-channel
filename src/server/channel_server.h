@@ -3,11 +3,11 @@
 
 #include <map>
 #include <mutex>
+#include "../libs/chat_req_dto.h"
 
-#include "typed_json_frame_server.h"
+#include "server_base.h"
 #include "chat_server.h"
 #include "channel.h"
-#include "../libs/json.h"
 #include "channel_factory.h"
 
 
@@ -17,7 +17,10 @@
 
 */
 
-class ChannelServer: public TypedJsonFrameServer<User> {
+// Forward declare to use in JsonMessageProcessor
+template <typename U> class JsonMessageProcessor;
+
+class ChannelServer: public ServerBase<User> {
     public:
         struct ChannelReport {
 			enum { JOIN } type;
@@ -35,7 +38,7 @@ class ChannelServer: public TypedJsonFrameServer<User> {
 		std::shared_mutex la_mtx;
 		std::shared_mutex chs_mtx;
     public:
-        ChannelServer(NetworkService<User>* service, const int max_fd, ChannelFactory* factory, const msec to = 1000);
+        ChannelServer(NetworkService<User>* service, const int max_fd, ChannelFactory* factory, const msec to);
         ~ChannelServer();
 		virtual bool init() override;
 		void switch_channel(typename NetworkService<User>::Session& ses, const ch_id_t from, const ch_id_t to);
@@ -44,7 +47,7 @@ class ChannelServer: public TypedJsonFrameServer<User> {
 		// virtual void resolve_close() override;
 
 		virtual void on_accept(typename NetworkService<User>::Session& ses) override;
-        virtual void on_req(const typename NetworkService<User>::Session& ses, const char* target, Json& root) override;
+        virtual void handle_request(typename NetworkService<User>::Session& ses, std::unique_ptr<Request> req) override;
 
 		virtual void free_user(typename NetworkService<User>::Session& ses) override;
 	private:

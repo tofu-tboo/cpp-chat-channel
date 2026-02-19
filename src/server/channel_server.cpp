@@ -1,8 +1,10 @@
 #include "channel_server.h"
 #include "../libs/util.h"
 #include "user_manager.h"
+#include "../libs/json_parser.h"
 
-ChannelServer::ChannelServer(NetworkService<User>* service, const int max, ChannelFactory* factory, const msec to): TypedJsonFrameServer(service, max, to), channel_factory(factory) {}
+ChannelServer::ChannelServer(NetworkService<User>* service, const int max, ChannelFactory* factory, const msec to)
+	: ServerBase<User>(service, new JsonParser(), max, to), channel_factory(factory) {}
 
 ChannelServer::~ChannelServer() {
     for (auto& [_, channel] : channels) {
@@ -23,7 +25,7 @@ ChannelServer::~ChannelServer() {
 }
 
 bool ChannelServer::init() {
-	if (TypedJsonFrameServer::init()) {
+	if (ServerBase<User>::init()) {
 		// Periodically process switch requests from channels
 		task_runner.pushf(TS_LOGIC, AsThrottle([this]() {
 			check_lobby();
@@ -65,27 +67,27 @@ void ChannelServer::free_user(typename NetworkService<User>::Session& ses) {
 }
 
 void ChannelServer::on_accept(typename NetworkService<User>::Session& ses) {
-	TypedJsonFrameServer<User>::on_accept(ses);
+	ServerBase<User>::on_accept(ses);
 	std::unique_lock<std::shared_mutex> lock(la_mtx);
 	last_act[&ses] = now_ms();
 }
 
-void ChannelServer::on_req(const typename NetworkService<User>::Session& ses, const char* target, Json& root) {
-	User* from = ses.user;
-    switch (hash(target))
-    {
-    case hash("join"):
-    case hash("Join"):
-    case hash("JOIN"):
-        {
-            ch_id_t channel_id;
-			const char* user_name;
-			__UNPACK_JSON(root, "{s:i,s:s}", "channel_id", &channel_id, "user_name", &user_name) {
-				if (from->name) free(from->name);
-				from->name = strdup(user_name);
+void ChannelServer::handle_request(typename NetworkService<User>::Session& ses, std::unique_ptr<Request> req) {
+	JsonRequest* json_req = dynamic_cast<JsonRequest*>(req.get());
+	if (!json_req) return;
 
-				Channel* target_ch = find_or_create_channel(channel_id);
-				
+	ChatReqDto dto(&json_req->root);
+
+	switch_hash(dto.type.c_str()) {
+		case_hash("join"):
+		case_hash("Join"):
+		case_hash("JOIN"):
+			{
+				User* from = ses.user;
+				if (from->name) free(from->name);
+				from->name = strdup(dto.user_name.c_str());
+
+				Channel* target_ch = find_or_create_channel(dto.channel_id);
 				target_ch->join_and_logging(const_cast<typename NetworkService<User>::Session&>(ses), false);
 
 				std::unique_lock<std::shared_mutex> lock(la_mtx);
@@ -93,15 +95,12 @@ void ChannelServer::on_req(const typename NetworkService<User>::Session& ses, co
 				lock.unlock();
 
 				cur_conn--;
-
-            } __UNPACK_FAIL {
-                iERROR("Malformed JSON message, missing channel_id or timestamp or user_name.");
-            }
-        }
-        break;
-    default:
-        break;
-    }
+				break;
+			}
+		default:
+			break;
+	}
+	
 }
 
 #pragma endregion

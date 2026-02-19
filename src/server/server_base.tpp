@@ -1,16 +1,14 @@
 #include "server_base.h"
+#include "../libs/msg_parser.h"
 
 template <typename U>
-ServerBase<U>::ServerBase(NetworkService<U>* di_service, const int max, const msec to): service(di_service), max_conn(max), cur_conn(0), timeout(to), is_running(true) {
-    try {
-        branch_id = static_cast<int>(std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count());
+ServerBase<U>::ServerBase(NetworkService<U>* di_service, IMsgParser<Request>* processor, const int max, const msec to): service(di_service), msg_parser(processor), max_conn(max), cur_conn(0), timeout(to), is_running(true) {
+    branch_id = now_ms();
 
-		if (!di_service)
-			throw std::runtime_error("Network Service NullPtr.");
-    } catch (const std::exception& e) {
-        iERROR("%s", e.what());
-    }
+	if (!di_service)
+		throw std::runtime_error("Network Service NullPtr.");
+	else if (!processor)
+		throw std::runtime_error("Message Processor NullPtr.");
 }
 
 template <typename U>
@@ -102,7 +100,10 @@ void ServerBase<U>::on_close(typename NetworkService<U>::Session& ses) {
 
 template <typename U>
 void ServerBase<U>::on_recv(typename NetworkService<U>::Session& ses, const RecvStream& stream) {
-    on_frame(ses, std::string(reinterpret_cast<const char*>(stream.data), stream.len));
+    if (msg_parser) {
+		auto req = msg_parser->process(std::string(reinterpret_cast<const char*>(stream.data), stream.len));
+		handle_request(ses, std::move(req));
+	}
 }
 
 template <typename U>

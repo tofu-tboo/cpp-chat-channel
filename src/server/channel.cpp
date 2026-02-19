@@ -1,5 +1,6 @@
 #include "channel.h"
 #include "channel_server.h"
+#include "../libs/json_parser.h"
 
 Channel::Channel(NetworkService<User>* service, ChannelServer* srv, ch_id_t id, const int max_conn): ChatServer(service, max_conn, 100), channel_id(id), server(srv), empty_since(0) {}
 Channel::~Channel() {}
@@ -87,28 +88,28 @@ msec64 Channel::get_empty_since() const { return empty_since; }
 
 void Channel::on_accept(typename NetworkService<User>::Session& ses) {}
 
-void Channel::on_req(const typename NetworkService<User>::Session& ses, const char* target, Json& root) {
-    switch (hash(target)) {
-    case hash("message"):
-    case hash("Message"):
-    case hash("MESSAGE"):
-		ChatServer::on_req(ses, target, root);
-        break;
-    case hash("join"):
-    case hash("Join"):
-    case hash("JOIN"):
-        {
-			ch_id_t ch_to;
-			__UNPACK_JSON(root, "{s:i}", "channel_id", &ch_to) {
-				if (ch_to == channel_id) return;
-				
-				server->switch_channel(const_cast<typename NetworkService<User>::Session&>(ses), channel_id, ch_to);
-			} __UNPACK_FAIL {
-				iERROR("Malformed JSON message, missing channel_id.");
+void Channel::handle_request(typename NetworkService<User>::Session& ses, std::unique_ptr<Request> req) {
+	JsonRequest* json_req = dynamic_cast<JsonRequest*>(req.get());
+	if (!json_req) return;
+
+	ChatReqDto dto(&json_req->root);
+
+	switch_hash(dto.type.c_str()) {
+		case_hash("message"):
+		case_hash("Message"):
+		case_hash("MESSAGE"):
+				// Delegate to ChatServer for messages
+				ChatServer::handle_request(ses, std::move(req));
+			break;
+		case_hash("join"):
+		case_hash("Join"):
+		case_hash("JOIN"):
+			{
+				if (dto.channel_id == channel_id) return;
+				server->switch_channel(const_cast<typename NetworkService<User>::Session&>(ses), channel_id, dto.channel_id);
 			}
-		}
-    default:
-        break;
+		default:
+			break;
     }
 }
 

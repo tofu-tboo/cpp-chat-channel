@@ -9,6 +9,8 @@
 #include <stdexcept>
 #include <chrono>
 
+#include "types.h"
+
 #define _EC_                                    "\033[0m"
 #define _CR_                		            "\033[0;31m"
 #define _CG_                   		            "\033[0;32m"
@@ -40,10 +42,10 @@
 
 #define __FREES(...)                            frees(CNT_ARGS(__VA_ARGS__), __VA_ARGS__)
 
-void frees(int, ...);
+#define switch_hash(str) 						switch (hash(str))
+#define case_hash(s)							case hash(s)
 
-typedef int msec;
-typedef uint64_t msec64;
+void frees(int, ...);
 
 class coded_runtime_error : public std::runtime_error {
 public:
