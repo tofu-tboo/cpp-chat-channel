@@ -4,8 +4,8 @@
 #include "user_manager.h"
 #include "../libs/json_parser.h"
 
-ChatServer::ChatServer(NetworkService<User>* service, const int max_fd, const msec to)
-	: ServerBase<User>(service, new JsonParser(), max_fd, to) {}
+ChatServer::ChatServer(std::shared_ptr<NetworkService<User>> service, const int max_fd)
+	: ServerBase<User>(std::move(service), std::make_unique<JsonParser>(), max_fd) {}
 
 ChatServer::~ChatServer() {
 	cur_msgs.clear();

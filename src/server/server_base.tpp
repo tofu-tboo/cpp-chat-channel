@@ -2,13 +2,13 @@
 #include "../libs/msg_parser.h"
 
 template <typename U>
-ServerBase<U>::ServerBase(NetworkService<U>* di_service, IMsgParser<Request>* processor, const int max, const msec to): service(di_service), msg_parser(processor), max_conn(max), cur_conn(0), timeout(to), is_running(true) {
+ServerBase<U>::ServerBase(std::shared_ptr<NetworkService<U>> di_service, std::unique_ptr<IMsgParser> processor, const int max): service(std::move(di_service)), msg_parser(std::move(processor)), max_conn(max), cur_conn(0), is_running(true) {
     branch_id = now_ms();
 
-	if (!di_service)
+	if (!service)
 		throw std::runtime_error("Network Service NullPtr.");
-	else if (!processor)
-		throw std::runtime_error("Message Processor NullPtr.");
+	else if (!msg_parser)
+		throw std::runtime_error("Message Parser NullPtr.");
 }
 
 template <typename U>

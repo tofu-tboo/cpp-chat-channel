@@ -1,6 +1,6 @@
 #include "json_parser.h"
 
-std::unique_ptr<JsonRequest> JsonParser::process(const std::string& frame) {
+std::unique_ptr<Request> JsonParser::process(const std::string& frame) {
 	json_error_t err;
 	Json root(json_loads(frame.c_str(), 0, &err));
 	if (!root) {

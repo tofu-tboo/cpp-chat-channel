@@ -3,8 +3,8 @@
 #include "user_manager.h"
 #include "../libs/json_parser.h"
 
-ChannelServer::ChannelServer(NetworkService<User>* service, const int max, ChannelFactory* factory, const msec to)
-	: ServerBase<User>(service, new JsonParser(), max, to), channel_factory(factory) {}
+ChannelServer::ChannelServer(std::shared_ptr<NetworkService<User>> service, const int max, std::unique_ptr<ChannelFactory> factory)
+	: ServerBase<User>(std::move(service), std::make_unique<JsonParser>(), max), channel_factory(std::move(factory)) {}
 
 ChannelServer::~ChannelServer() {
     for (auto& [_, channel] : channels) {
@@ -21,7 +21,6 @@ ChannelServer::~ChannelServer() {
 	// 	}
     // }
     channels.clear();
-	if (channel_factory) delete channel_factory;
 }
 
 bool ChannelServer::init() {
@@ -93,7 +92,7 @@ void ChannelServer::handle_request(typename NetworkService<User>::Session& ses, 
 				std::unique_lock<std::shared_mutex> lock(la_mtx);
 				last_act.erase(const_cast<typename NetworkService<User>::Session*>(&ses));
 				lock.unlock();
-
+				
 				cur_conn--;
 				break;
 			}

@@ -33,12 +33,12 @@ class ChannelServer: public ServerBase<User> {
         std::mutex report_mtx;
 		std::unordered_map<typename NetworkService<User>::Session*, msec64> last_act;
 
-		ChannelFactory* channel_factory;
+		std::unique_ptr<ChannelFactory> channel_factory;
 
 		std::shared_mutex la_mtx;
 		std::shared_mutex chs_mtx;
     public:
-        ChannelServer(NetworkService<User>* service, const int max_fd, ChannelFactory* factory, const msec to);
+        ChannelServer(std::shared_ptr<NetworkService<User>> service, const int max_fd, std::unique_ptr<ChannelFactory> factory);
         ~ChannelServer();
 		virtual bool init() override;
 		void switch_channel(typename NetworkService<User>::Session& ses, const ch_id_t from, const ch_id_t to);

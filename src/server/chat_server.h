@@ -21,7 +21,7 @@ class ChatServer : public ServerBase<User> {
 		std::shared_mutex mq_mtx;
 		std::shared_mutex cm_mtx;
 	public:
-		ChatServer(NetworkService<User>* service, const int max_fd, const msec to);
+		ChatServer(std::shared_ptr<NetworkService<User>> service, const int max_fd);
 		~ChatServer();
 		virtual bool init() override;
 	protected:

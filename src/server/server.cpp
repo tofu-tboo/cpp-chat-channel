@@ -7,6 +7,7 @@
 #include "channel_server.h"
 #include "../libs/network_service.h"
 #include "channel_factory.h"
+#include "../libs/json_parser.h"
 
 ChannelServer* g_server = nullptr;
 
@@ -35,9 +36,9 @@ int main(int argc, char* argv[]) {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
-	NetworkService<User> service(port);
-	ChannelFactory* factory = new ChannelFactory(&service, ch_max_fd);
-	g_server = ServerFactory::create<User, ChannelServer>(&service, lobby_max_fd, factory);
+	auto service = std::make_shared<NetworkService<User>>(port);
+	auto factory = std::make_unique<ChannelFactory>(service, ch_max_fd);
+	g_server = ServerFactory::create<User, ChannelServer>(service, lobby_max_fd, std::move(factory));
 
     g_server->proc();
 

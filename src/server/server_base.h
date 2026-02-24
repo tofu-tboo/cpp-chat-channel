@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <algorithm>
 #include <atomic>
+#include <memory>
 
 #include "../libs/util.h"
 #include "../libs/dto.h"
@@ -53,8 +54,8 @@ template <typename U>
 class ServerBase: public SessionEvHandler<U> {
     protected:
         int branch_id; // branch's id
-		NetworkService<U>* service;
-		IMsgParser<Request>* msg_parser;
+		std::shared_ptr<NetworkService<U>> service;
+		std::unique_ptr<IMsgParser> msg_parser;
 
         enum TaskSession {
             TS_PRE = 0,   	// 전처리: 큐 소비, 버퍼 정리
@@ -62,8 +63,6 @@ class ServerBase: public SessionEvHandler<U> {
             TS_LOGIC, 		// 로직: 메시지 처리, 브로드캐스트, 삭제
             TS_COUNT
         };
-
-        msec timeout;
 
         std::unordered_set<typename NetworkService<U>::Session*> nxt_close;
 
@@ -75,7 +74,7 @@ class ServerBase: public SessionEvHandler<U> {
 		unsigned int max_conn;
 		std::atomic<unsigned int> cur_conn;
     public:
-        ServerBase(NetworkService<U>* di_service, IMsgParser<Request>* processor, const int max_fd = 256, const msec to = 1000);
+        ServerBase(std::shared_ptr<NetworkService<U>> di_service, std::unique_ptr<IMsgParser> processor, const int max_fd = 256);
         virtual ~ServerBase();
 
 		virtual bool init();

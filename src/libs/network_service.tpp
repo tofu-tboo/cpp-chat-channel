@@ -209,7 +209,6 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 	// instance->pre_proc(wsi, reason, session, in, len);
 	switch (reason) {
 		case LWS_CALLBACK_RAW_ADOPT:
-			instance->set_timeout(ses, TO_EV_PING_PONG);
 		case LWS_CALLBACK_ESTABLISHED:
 		{
 			event = LwsCallbackParam::ACPT;
@@ -228,6 +227,10 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 			ses->group = INT_MIN; //reserved
 			ses->last_act = now_ms();
 			ses->tokens = RL_BURST_MAX; // 초기 접속 시 최대치 부여
+
+			if (reason == LWS_CALLBACK_RAW_ADOPT) {
+				instance->set_timeout(ses, TO_EV_PING_PONG); // set TCP ping-pong timer
+			}
 
 			std::unique_lock<std::shared_mutex> lock(instance->sr_mtx);
 			instance->send_resv[wsi] = std::queue<std::vector<unsigned char>>();

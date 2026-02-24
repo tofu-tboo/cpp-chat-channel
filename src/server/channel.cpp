@@ -2,7 +2,7 @@
 #include "channel_server.h"
 #include "../libs/json_parser.h"
 
-Channel::Channel(NetworkService<User>* service, ChannelServer* srv, ch_id_t id, const int max_conn): ChatServer(service, max_conn, 100), channel_id(id), server(srv), empty_since(0) {}
+Channel::Channel(std::shared_ptr<NetworkService<User>> service, ChannelServer* srv, ch_id_t id, const int max_conn): ChatServer(std::move(service), max_conn), channel_id(id), server(srv), empty_since(0) {}
 Channel::~Channel() {}
 
 bool Channel::init() {
@@ -27,9 +27,6 @@ void Channel::leave(typename NetworkService<User>::Session& ses, const MessageRe
 
 	std::unique_lock<std::shared_mutex> lock(mq_mtx);
 	mq.push({&ses, msg});
-	lock.unlock();
-
-	LOG(_CR_ "[Leave] User %p left channel %u at %lu" _EC_, ses.user, channel_id, msg.timestamp);
 }
 
 void Channel::join(typename NetworkService<User>::Session& ses, const MessageReqDto& msg) {
@@ -43,9 +40,6 @@ void Channel::join(typename NetworkService<User>::Session& ses, const MessageReq
 
 	std::unique_lock<std::shared_mutex> lock(mq_mtx);
 	mq.push({&ses, msg});
-	lock.unlock();
-
-	LOG(_CB_ "[Join] User %p joined channel %u at %lu" _EC_, ses.user, channel_id, msg.timestamp);
 }
 
 void Channel::leave_and_logging(typename NetworkService<User>::Session& ses) {
@@ -60,6 +54,8 @@ void Channel::leave_and_logging(typename NetworkService<User>::Session& ses) {
 	}
 
 	leave(ses, sys_msg);
+
+	LOG(_CR_ "[Leave] User %p left channel %u at %lu" _EC_, ses.user, channel_id, sys_msg.timestamp);
 }
 
 void Channel::join_and_logging(typename NetworkService<User>::Session& ses, bool re) {
@@ -75,6 +71,8 @@ void Channel::join_and_logging(typename NetworkService<User>::Session& ses, bool
 	sys_msg.text = re ? "rejoin" : "join";
 
 	join(ses, sys_msg);
+
+	LOG(_CB_ "[Join] User %p joined channel %u at %lu" _EC_, ses.user, channel_id, sys_msg.timestamp);
 }
 
 bool Channel::ping_pool() {

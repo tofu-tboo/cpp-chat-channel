@@ -18,7 +18,7 @@ class Channel: public ChatServer {
 
 		std::atomic<msec64> empty_since;
     public:
-        Channel(NetworkService<User>* service, ChannelServer* srv, ch_id_t id, const int max = 256);
+        Channel(std::shared_ptr<NetworkService<User>> service, ChannelServer* srv, ch_id_t id, const int max = 256);
         ~Channel();
 
 		virtual bool init() override;

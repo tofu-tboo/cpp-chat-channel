@@ -34,8 +34,8 @@ int main(int argc, char* argv[]) {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
-	NetworkService<User> service(port);
-	g_server = ServerFactory::create<User, ChatServer>(&service, lobby_max_fd, ch_max_fd);
+	auto service = std::make_shared<NetworkService<User>>(port);
+	g_server = ServerFactory::create<User, ChatServer>(std::move(service), lobby_max_fd);
 
     g_server->proc();
 

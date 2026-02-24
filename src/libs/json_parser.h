@@ -10,9 +10,9 @@ typedef struct _JsonReq : public Request {
 	_JsonReq(Json r) : root(std::move(r)) {}
 }JsonRequest;
 
-class JsonParser : public IMsgParser<JsonRequest> {
+class JsonParser : public IMsgParser {
 	public:
-		 virtual std::unique_ptr<JsonRequest> process(const std::string& frame) override;
+		 virtual std::unique_ptr<Request> process(const std::string& frame) override;
 };
 
 #endif
