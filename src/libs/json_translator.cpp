@@ -1,6 +1,6 @@
-#include "json_parser.h"
+#include "json_translator.h"
 
-std::unique_ptr<Request> JsonParser::process(const std::string& frame) {
+std::unique_ptr<Request> JsonTranslator::decode(const std::string& frame) {
 	json_error_t err;
 	Json root(json_loads(frame.c_str(), 0, &err));
 	if (!root) {
@@ -8,4 +8,9 @@ std::unique_ptr<Request> JsonParser::process(const std::string& frame) {
 	}
 
 	return std::make_unique<JsonRequest>(std::move(root));
+}
+
+std::string JsonTranslator::encode(const Response& res) {
+	// Implement encoding logic if needed
+	return "";
 }

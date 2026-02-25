@@ -2,7 +2,7 @@
 #define __CHAT_SERVER_H__
 
 #include "server_base.h"
-#include "../libs/json_parser.h"
+#include "../libs/json_translator.h"
 #include "../libs/chat_req_dto.h"
 #include "../libs/dto.h"
 #include "../libs/producer_consumer.h"

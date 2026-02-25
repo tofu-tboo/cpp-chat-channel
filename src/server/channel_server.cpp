@@ -1,10 +1,10 @@
 #include "channel_server.h"
 #include "../libs/util.h"
 #include "user_manager.h"
-#include "../libs/json_parser.h"
+#include "../libs/json_translator.h"
 
 ChannelServer::ChannelServer(std::shared_ptr<NetworkService<User>> service, const int max, std::unique_ptr<ChannelFactory> factory)
-	: ServerBase<User>(std::move(service), std::make_unique<JsonParser>(), max), channel_factory(std::move(factory)) {}
+	: ServerBase<User>(std::move(service), std::make_unique<JsonTranslator>(), max), channel_factory(std::move(factory)) {}
 
 ChannelServer::~ChannelServer() {
     for (auto& [_, channel] : channels) {

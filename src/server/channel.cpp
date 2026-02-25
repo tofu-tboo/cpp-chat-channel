@@ -1,6 +1,7 @@
 #include "channel.h"
 #include "channel_server.h"
-#include "../libs/json_parser.h"
+#include "../libs/json_translator.h"
+#include "../libs/chat_res_dto.h"
 
 Channel::Channel(std::shared_ptr<NetworkService<User>> service, ChannelServer* srv, ch_id_t id, const int max_conn): ChatServer(std::move(service), max_conn), channel_id(id), server(srv), empty_since(0) {}
 Channel::~Channel() {}
@@ -112,38 +113,32 @@ void Channel::handle_request(typename NetworkService<User>::Session& ses, std::u
 }
 
 void Channel::resolve_broadcast() {
-    Json cur_window(json_array());
+	ChatResDtoArray dtos;
 	std::shared_lock<std::shared_mutex> lock(cm_mtx);
 
     for (const auto& [timestamp, req_pair] : cur_msgs) {
 		const auto& req = req_pair.second;
-		std::string type;
 		switch (req.type)
 		{
-		case USER:
-		{
-			type = "user";
-			__ALLOC_JSON_NEW(payload, "{s:s,s:s,s:s}",
-			"type", type.c_str(), "user_name", req.user_name.c_str(), "event", req.text.c_str()) {
-				json_array_append_new(cur_window.get(), payload);
-			} __ALLOC_FAIL {
-				iERROR("Failed to create broadcast JSON.");
-				continue;
+			case USER:
+			{
+				ChatResDto dto;
+				dto.type = "user";
+				dto.event = req.text;
+				dto.user_name = req.user_name;
+				dtos.entries.push_back(std::move(dto));
+				break;
 			}
-		}
-			break;
-		case SYSTEM:
-		{
-			type = "system";
-			__ALLOC_JSON_NEW(payload, "{s:s,s:s,s:s,s:I}",
-			"type", type.c_str(), "user_name", req.user_name.c_str(), "event", req.text.c_str(), "channel_id", req.channel_id) {
-				json_array_append_new(cur_window.get(), payload);
-			} __ALLOC_FAIL {
-				iERROR("Failed to create broadcast JSON.");
-				continue;
+			case SYSTEM:
+			{
+				ChatResDto dto;
+				dto.type = "system";
+				dto.event = req.text;
+				dto.user_name = req.user_name;
+				dto.channel_id = req.channel_id;
+				dtos.entries.push_back(std::move(dto));
+				break;
 			}
-		}
-			break;
 		default:
 			break;
 		}
@@ -151,11 +146,11 @@ void Channel::resolve_broadcast() {
     }
 	lock.unlock();
 	
-	if (json_array_size(cur_window.get()) == 0) return;
+	if (dtos.entries.empty()) return;
 
-    CharDump dumped(json_dumps(cur_window.get(), 0));
-    if (dumped) {
-		service->broadcast_group_async(channel_id, std::string(dumped.get()));
+    std::string frame = dtos.to_frame();
+    if (!frame.empty()) {
+		service->broadcast_group_async(channel_id, frame);
     }
 }
 

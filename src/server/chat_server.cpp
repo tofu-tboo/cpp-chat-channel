@@ -2,10 +2,11 @@
 
 #include "chat_server.h"
 #include "user_manager.h"
-#include "../libs/json_parser.h"
+#include "../libs/json_translator.h"
+#include "../libs/chat_res_dto.h"
 
 ChatServer::ChatServer(std::shared_ptr<NetworkService<User>> service, const int max_fd)
-	: ServerBase<User>(std::move(service), std::make_unique<JsonParser>(), max_fd) {}
+	: ServerBase<User>(std::move(service), std::make_unique<JsonTranslator>(), max_fd) {}
 
 ChatServer::~ChatServer() {
 	cur_msgs.clear();
@@ -44,49 +45,44 @@ void ChatServer::resolve_timestamps() {
 }
 
 void ChatServer::resolve_broadcast() {
-    Json cur_window(json_array());
+    ChatResDtoArray dtos;
 	std::shared_lock<std::shared_mutex> lock(cm_mtx);
 
-    for (const auto& [timestamp, req] : cur_msgs) {
-		std::string type;
-		switch (req.second.type)
+    for (const auto& [timestamp, req_pair] : cur_msgs) {
+		const auto& req = req_pair.second;
+		switch (req.type)
 		{
-		case USER:
-		{
-			type = "user";
-			__ALLOC_JSON_NEW(payload, "{s:s,s:s,s:s}",
-			"type", type.c_str(), "user_name", req.second.user_name.c_str(), "event", req.second.text.c_str()) {
-				json_array_append_new(cur_window.get(), payload);
-			} __ALLOC_FAIL {
-				iERROR("Failed to create broadcast JSON.");
-				continue;
+			case USER:
+			{
+				ChatResDto dto;
+				dto.type = "user";
+				dto.event = req.text;
+				dto.user_name = req.user_name;
+				dtos.entries.push_back(std::move(dto));
+				break;
 			}
-		}
-			break;
-		case SYSTEM:
-		{
-			type = "system";
-			__ALLOC_JSON_NEW(payload, "{s:s,s:s,s:s,s:I}",
-			"type", type.c_str(), "user_name", req.second.user_name.c_str(), "event", req.second.text.c_str(), "channel_id", req.second.channel_id) {
-				json_array_append_new(cur_window.get(), payload);
-			} __ALLOC_FAIL {
-				iERROR("Failed to create broadcast JSON.");
-				continue;
+			case SYSTEM:
+			{
+				ChatResDto dto;
+				dto.type = "system";
+				dto.event = req.text;
+				dto.user_name = req.user_name;
+				dto.channel_id = req.channel_id;
+				dtos.entries.push_back(std::move(dto));
+				break;
 			}
-		}
-			break;
 		default:
 			break;
 		}
 		
     }
 	lock.unlock();
+	
+	if (dtos.entries.empty()) return;
 
-	if (json_array_size(cur_window.get()) == 0) return;
-
-    CharDump dumped(json_dumps(cur_window.get(), 0));
-    if (dumped) {
-		service->broadcast_async(std::string(dumped.get()));
+    std::string frame = dtos.to_frame();
+    if (!frame.empty()) {
+		service->broadcast_async(frame);
     }
 }
 

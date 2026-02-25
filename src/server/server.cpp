@@ -7,7 +7,7 @@
 #include "channel_server.h"
 #include "../libs/network_service.h"
 #include "channel_factory.h"
-#include "../libs/json_parser.h"
+#include "../libs/json_translator.h"
 
 ChannelServer* g_server = nullptr;
 

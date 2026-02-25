@@ -3,16 +3,16 @@
 
 #include "types.h"
 #include "json.h"
-#include "json_parser.h"
+#include "json_translator.h"
 
-typedef struct _TypeJson: public Request {
+struct ChatReqDto: public JsonRequest {
 	std::string type;
 	std::string text;
 	msec64 timestamp;
 	std::string user_name;
 	ch_id_t channel_id;
 
-	_TypeJson(Json* root) {
+	ChatReqDto(Json* root) {
 		const char* type = nullptr;
 		const char* text = nullptr;
 		const char* user_name = nullptr;
@@ -28,7 +28,9 @@ typedef struct _TypeJson: public Request {
 			throw runtime_errorf("Malformed JSON message.");
 		}
 	}
-	_TypeJson(JsonRequest* req) : _TypeJson(&req->root) {}
-} ChatReqDto;
+	ChatReqDto(JsonRequest* req) : ChatReqDto(&req->root) {}
+
+	virtual Request* to_dto() override { return this; }
+};
 
 #endif

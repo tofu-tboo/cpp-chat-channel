@@ -27,7 +27,7 @@
 #include "../libs/socket.h"
 #include "../libs/task_runner.h"
 #include "../libs/network_service.h"
-#include "../libs/msg_parser.h"
+#include "../libs/msg_translator.h"
 
 
 /*
@@ -55,7 +55,7 @@ class ServerBase: public SessionEvHandler<U> {
     protected:
         int branch_id; // branch's id
 		std::shared_ptr<NetworkService<U>> service;
-		std::unique_ptr<IMsgParser> msg_parser;
+		std::unique_ptr<IMsgTranslator> msg_translator;
 
         enum TaskSession {
             TS_PRE = 0,   	// 전처리: 큐 소비, 버퍼 정리
@@ -74,7 +74,7 @@ class ServerBase: public SessionEvHandler<U> {
 		unsigned int max_conn;
 		std::atomic<unsigned int> cur_conn;
     public:
-        ServerBase(std::shared_ptr<NetworkService<U>> di_service, std::unique_ptr<IMsgParser> processor, const int max_fd = 256);
+        ServerBase(std::shared_ptr<NetworkService<U>> di_service, std::unique_ptr<IMsgTranslator> processor, const int max_fd = 256);
         virtual ~ServerBase();
 
 		virtual bool init();

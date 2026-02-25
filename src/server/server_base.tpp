@@ -1,13 +1,13 @@
 #include "server_base.h"
-#include "../libs/msg_parser.h"
+#include "../libs/msg_translator.h"
 
 template <typename U>
-ServerBase<U>::ServerBase(std::shared_ptr<NetworkService<U>> di_service, std::unique_ptr<IMsgParser> processor, const int max): service(std::move(di_service)), msg_parser(std::move(processor)), max_conn(max), cur_conn(0), is_running(true) {
+ServerBase<U>::ServerBase(std::shared_ptr<NetworkService<U>> di_service, std::unique_ptr<IMsgTranslator> processor, const int max): service(std::move(di_service)), msg_translator(std::move(processor)), max_conn(max), cur_conn(0), is_running(true) {
     branch_id = now_ms();
 
 	if (!service)
 		throw std::runtime_error("Network Service NullPtr.");
-	else if (!msg_parser)
+	else if (!msg_translator)
 		throw std::runtime_error("Message Parser NullPtr.");
 }
 
@@ -100,8 +100,8 @@ void ServerBase<U>::on_close(typename NetworkService<U>::Session& ses) {
 
 template <typename U>
 void ServerBase<U>::on_recv(typename NetworkService<U>::Session& ses, const RecvStream& stream) {
-    if (msg_parser) {
-		auto req = msg_parser->process(std::string(reinterpret_cast<const char*>(stream.data), stream.len));
+    if (msg_translator) {
+		auto req = msg_translator->decode(std::string(reinterpret_cast<const char*>(stream.data), stream.len));
 		handle_request(ses, std::move(req));
 	}
 }
