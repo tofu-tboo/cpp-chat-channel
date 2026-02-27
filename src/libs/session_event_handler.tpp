@@ -2,6 +2,9 @@
 #include "session_event_handler.h"
 
 template <typename T>
+SessionEvHandler<T>::SessionEvHandler(): Loggable("SessionEvHandler", _L_GREEN, this) {}
+
+template <typename T>
 int SessionEvHandler<T>::callback(const LwsCallbackParam& param) {
 
 	// Connection connection = { .wsi = param.wsi, .prot_id = param.prot_id };
@@ -30,7 +33,7 @@ int SessionEvHandler<T>::callback(const LwsCallbackParam& param) {
 				break;
 		}
 	} catch (std::exception& e) {
-        ERROR("%s", e.what());
+		elog("Exception in event callback: %s", e.what());
 		return -1;
 	}
 	return 0;

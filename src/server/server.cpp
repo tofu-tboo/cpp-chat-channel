@@ -39,9 +39,11 @@ int main(int argc, char* argv[]) {
 	auto service = std::make_shared<NetworkService<User>>(port);
 	auto factory = std::make_unique<ChannelFactory>(service, ch_max_fd);
 	g_server = ServerFactory::create<User, ChannelServer>(service, lobby_max_fd, std::move(factory));
+	printf("LWS Version: %s\n", lws_get_library_version());
 
     g_server->proc();
 
     g_server = nullptr;
+
     return 0;
 }

@@ -18,16 +18,42 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <shared_mutex>
+#include <libwebsockets.h>
 
-#include "socket.h"
-#include "session_event_handler.h"
+// #include "socket.h"
 #include "dto.h"
 #include "util.h"
+#include "loggable.h"
+
+typedef struct lws_context ctx;
+typedef struct lws_context_creation_info ctx_creation_info;
+typedef struct lws_protocols protocols_t;
+typedef struct lws lws;
+typedef enum lws_callback_reasons callback_reason;
+typedef short protocol_id;
+typedef lws_sorted_usec_list_t utimer_list_t;
+
+typedef struct {
+	lws* wsi;
+	enum { NONE, ACPT, RECV, SEND, CLOSE, RL_DROP } event;
+	void* user;
+	unsigned char* in;
+	size_t len;
+	protocol_id prot_id;
+} LwsCallbackParam;
+
+typedef struct {
+	lws* wsi;
+	protocol_id prot_id;
+} Connection;
+
+template <typename T>
+class SessionEvHandler;
 
 // NetworkService allows the packets to be limited as certain size.
 
 template <typename T>
-class NetworkService {
+class NetworkService: protected Loggable {
 	public:
 		typedef struct {
 			private:
@@ -66,6 +92,8 @@ class NetworkService {
 		std::shared_mutex sr_mtx;
 
 		SessionEvHandler<T>* handler; // initial client-handler
+
+		utimer_list_t tlist;
 	public:
 		NetworkService(const int port);
 		~NetworkService();

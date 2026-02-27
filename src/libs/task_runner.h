@@ -46,14 +46,7 @@ class TaskRunner {
 
 // It is recommended to use universal ref-perfect forwarding when making wrapper.
 template <typename Callable>
-auto AsThrottle(Callable&& func, msec64 timeout) {
-    return [func = std::forward<Callable>(func), timeout, last = msec64(0)]() mutable {
-        msec64 now = now_ms();
-        if (now - last < timeout) return;
-        last = now;
-        func();
-    };
-}
+auto AsThrottle(Callable&& func, msec64 timeout);
 
 #include "task_runner.tpp"
 #endif

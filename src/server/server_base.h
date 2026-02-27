@@ -28,6 +28,7 @@
 #include "../libs/task_runner.h"
 #include "../libs/network_service.h"
 #include "../libs/msg_translator.h"
+#include "../libs/loggable.h"
 
 
 /*
@@ -51,7 +52,7 @@ class ServerFactory;
 // } Server;
 
 template <typename U>
-class ServerBase: public SessionEvHandler<U> {
+class ServerBase: public SessionEvHandler<U>, virtual protected Loggable {
     protected:
         int branch_id; // branch's id
 		std::shared_ptr<NetworkService<U>> service;

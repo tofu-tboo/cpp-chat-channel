@@ -2,7 +2,7 @@
 #include "../libs/msg_translator.h"
 
 template <typename U>
-ServerBase<U>::ServerBase(std::shared_ptr<NetworkService<U>> di_service, std::unique_ptr<IMsgTranslator> processor, const int max): service(std::move(di_service)), msg_translator(std::move(processor)), max_conn(max), cur_conn(0), is_running(true) {
+ServerBase<U>::ServerBase(std::shared_ptr<NetworkService<U>> di_service, std::unique_ptr<IMsgTranslator> processor, const int max): service(std::move(di_service)), msg_translator(std::move(processor)), max_conn(max), cur_conn(0), is_running(true), Loggable("ServerBase", _L_BLUE, this) {
     branch_id = now_ms();
 
 	if (!service)
@@ -45,7 +45,7 @@ void ServerBase<U>::proc() {
         try {
             task_runner.run();
         } catch(const std::exception& e) {
-            iERROR("%s", e.what());
+			elog("Exception in task runner: %s", e.what());
         }
     }
 }
@@ -76,16 +76,12 @@ template <typename U>
 void ServerBase<U>::on_accept(typename NetworkService<U>::Session& ses) {
 	try {
 		if (cur_conn >= max_conn)
-			throw runtime_errorf(POOL_FULL);
+			throw;
 		
 		cur_conn++;
-		LOG("Accepted new connection: user %p", ses.user);
+		log("Accepted new connection: " _L_CYAN "user %p", ses.user);
 	} catch (const std::exception& e) {
-		if (const auto* cre = try_get_coded_error(e)) {
-			if (cre->code == POOL_FULL) {
-				service->send_async(&ses, std::string(R"({"type":"error","message":"Server is full."})"));
-			}
-		}
+		service->send_async(&ses, std::string(R"({"type":"error","message":"Server is full."})"));
 		throw e;
     }
 
@@ -95,7 +91,7 @@ template <typename U>
 void ServerBase<U>::on_close(typename NetworkService<U>::Session& ses) {
 	cur_conn--;
 	free_user(ses);
-	LOG("Closed connection: user %p", ses.user);
+	log("Closed connection: " _L_CYAN "user %p", ses.user);
 }
 
 template <typename U>

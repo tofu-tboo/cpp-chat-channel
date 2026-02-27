@@ -75,3 +75,13 @@ template <typename Fn>
 void TaskRunner<Fn>::_pushf(std::deque<Task>& session, bool flag, const std::function<Fn>& func) {
     session.push_front({flag, func});
 }
+
+template <typename Callable>
+auto AsThrottle(Callable&& func, msec64 timeout)  {
+    return [func = std::forward<Callable>(func), timeout, last = msec64(0)]() mutable {
+        msec64 now = now_ms();
+        if (now - last < timeout) return;
+        last = now;
+        func();
+    };
+}

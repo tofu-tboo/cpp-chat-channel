@@ -1,10 +1,8 @@
 #ifndef __SESSION_EVENT_HANDLER_H__
 #define __SESSION_EVENT_HANDLER_H__
 
-#include "socket.h"
-
-template <typename T>
-class NetworkService;
+#include "loggable.h"
+#include "network_service.h"
 
 typedef struct {
 	const unsigned char* data;
@@ -12,11 +10,13 @@ typedef struct {
 } RecvStream;
 
 template <typename T>
-class SessionEvHandler {
+class SessionEvHandler: virtual protected Loggable {
 	private:
 		int callback(const LwsCallbackParam&);
 		friend class NetworkService<T>;
 	public:
+		SessionEvHandler();
+
 		virtual void on_accept(typename NetworkService<T>::Session&) = 0;
 		virtual void on_recv(typename NetworkService<T>::Session&, const RecvStream&) = 0;
 		virtual void on_send(typename NetworkService<T>::Session&) = 0;

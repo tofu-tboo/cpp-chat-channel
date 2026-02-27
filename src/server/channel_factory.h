@@ -3,7 +3,6 @@
 
 #include <memory>
 #include "channel.h"
-#include "user_manager.h"
 
 class ChannelServer;
 

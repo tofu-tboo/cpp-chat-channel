@@ -3,7 +3,7 @@
 #include "../libs/json_translator.h"
 #include "../libs/chat_res_dto.h"
 
-Channel::Channel(std::shared_ptr<NetworkService<User>> service, ChannelServer* srv, ch_id_t id, const int max_conn): ChatServer(std::move(service), max_conn), channel_id(id), server(srv), empty_since(0) {}
+Channel::Channel(std::shared_ptr<NetworkService<User>> service, ChannelServer* srv, ch_id_t id, const int max_conn): ChatServer(std::move(service), max_conn), channel_id(id), server(srv), empty_since(0), Loggable("Channel", _L_CYAN, this) {}
 Channel::~Channel() {}
 
 bool Channel::init() {
@@ -56,7 +56,7 @@ void Channel::leave_and_logging(typename NetworkService<User>::Session& ses) {
 
 	leave(ses, sys_msg);
 
-	LOG(_CR_ "[Leave] User %p left channel %u at %lu" _EC_, ses.user, channel_id, sys_msg.timestamp);
+	log(_L_RED "[Leave] " _L_CYAN "User %p" _L_DEFAULT " left channel %u at %lu" _L_DEFAULT, ses.user, channel_id, sys_msg.timestamp);
 }
 
 void Channel::join_and_logging(typename NetworkService<User>::Session& ses, bool re) {
@@ -73,7 +73,7 @@ void Channel::join_and_logging(typename NetworkService<User>::Session& ses, bool
 
 	join(ses, sys_msg);
 
-	LOG(_CB_ "[Join] User %p joined channel %u at %lu" _EC_, ses.user, channel_id, sys_msg.timestamp);
+	log(_L_GREEN "[Join] " _L_CYAN "User %p" _L_DEFAULT " joined channel %u at %lu" _L_DEFAULT, ses.user, channel_id, sys_msg.timestamp);
 }
 
 bool Channel::ping_pool() {

@@ -29,7 +29,7 @@ class ChannelServer: public ServerBase<User> {
         };
     private:
         std::map<ch_id_t, Channel*> channels;
-		ProducerConsumerQueue<ChannelReport> reports;
+		// ProducerConsumerQueue<ChannelReport> reports;
         std::mutex report_mtx;
 		std::unordered_map<typename NetworkService<User>::Session*, msec64> last_act;
 

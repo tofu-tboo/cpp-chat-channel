@@ -1,10 +1,9 @@
 #include "channel_server.h"
 #include "../libs/util.h"
-#include "user_manager.h"
 #include "../libs/json_translator.h"
 
 ChannelServer::ChannelServer(std::shared_ptr<NetworkService<User>> service, const int max, std::unique_ptr<ChannelFactory> factory)
-	: ServerBase<User>(std::move(service), std::make_unique<JsonTranslator>(), max), channel_factory(std::move(factory)) {}
+	: ServerBase<User>(std::move(service), std::make_unique<JsonTranslator>(), max), channel_factory(std::move(factory)), Loggable("ChannelServer", _L_BLUE, this) {}
 
 ChannelServer::~ChannelServer() {
     for (auto& [_, channel] : channels) {
@@ -46,7 +45,7 @@ void ChannelServer::switch_channel(typename NetworkService<User>::Session& ses, 
 	Channel* ch_to = get_channel(to);
 	
 	if (!ch_to->ping_pool()) {
-		iERROR("Channel %u is full.", to);
+		elog(_L_CYAN "Channel %u" _L_DEFAULT " is full.", to);
 		service->send_async(&ses, std::string(R"({"type":"error","message":"The channel is full."})"));
 		return;
 	}	
@@ -116,7 +115,7 @@ Channel* ChannelServer::get_channel(const ch_id_t channel_id) {
 	std::unique_lock<std::shared_mutex> lock2(chs_mtx);
 	channels[channel_id] = channel_factory->create(this, channel_id);
 	channels[channel_id]->init();
-	LOG(_CG_ "Channel %u created." _EC_, channel_id);
+	log(_L_CYAN "Channel %u" _L_DEFAULT " created.", channel_id);
 	return channels[channel_id];
 }
 
@@ -160,7 +159,7 @@ void ChannelServer::check_lobby() {
 		if (elapsed < 5000) {
 			next[session] = t;
 		} else {
-			LOG("Lobby timeout: user %p", session->user);
+			log(_L_YELLOW "Lobby timeout: " _L_CYAN "user %p", session->user);
 			resv_close(session);
 			service->send_async(session, std::string("Lobby timeout."));
 		}
@@ -177,7 +176,7 @@ void ChannelServer::check_channels() {
 		if (ch->get_empty_since() > 0) {
 			msec64 empty_time = ch->get_empty_since();
 			if (empty_time > 0 && (now - empty_time) > 300000) { // 5 minutes
-				LOG(_CG_ "Channel %u destroyed due to inactivity." _EC_, it->first);
+				log(_L_CYAN "Channel %u" _L_DEFAULT " destroyed due to inactivity.", it->first);
 				delete ch;
 				it = channels.erase(it);
 				continue;

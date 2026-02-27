@@ -1,6 +1,7 @@
 #include <climits>
 #include <new>
 #include "network_service.h"
+#include "session_event_handler.h"
 
 template <typename T>
 protocols_t NetworkService<T>::protocols[] = {
@@ -21,7 +22,7 @@ protocols_t NetworkService<T>::protocols[] = {
 
 
 template <typename T>
-NetworkService<T>::NetworkService(const int port): context(nullptr), fl_resv(false) {
+NetworkService<T>::NetworkService(const int port): context(nullptr), fl_resv(false), Loggable("NetworkService", _L_GREEN, this) {
 	memset(&info, 0, sizeof(info));
 	info.port = port;
 	info.protocols = NetworkService<T>::protocols;
@@ -53,7 +54,7 @@ void NetworkService<T>::setup(SessionEvHandler<T>* i_handler) {
 
 template <typename T>
 void NetworkService<T>::serve() {
-	LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CG_ "Serve() ------------" _EC_, (void*)this);
+	log(_L_WHITE "Serve()------------");
 	lws_service(context, 0);
 }
 
@@ -176,14 +177,13 @@ void NetworkService<T>::check_pong(Session* ses) {
 	msec64 now = now_ms();
 	
 	if (ses && ses->prot_id == TCP && ses->last_act) {
-		if (now - ses->last_act > 10 * M2S) {
+		if (now - ses->last_act > 10 * S2M) {
 			close_async(ses, std::string(""));
-			LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CB_ "Failed ping-pong of raw TCP user (%p)." _EC_, (void*)this, (void*)ses->wsi);
+			log(_L_BLUE "Failed ping-pong of raw TCP user (%p).", (void*)ses->wsi);
 		}
-		else if (now - ses->last_act > 5 * M2S) {
+		else if (now - ses->last_act > 5 * S2M) {
 			send_async(ses, std::string("-")); // ping
-			LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CB_ "Ping raw TCP user (%p)." _EC_, (void*)this, (void*)ses->wsi);
-			
+			log(_L_BLUE "Ping raw TCP user (%p).", (void*)ses->wsi);
 		}
 	}
 }
@@ -193,7 +193,7 @@ void NetworkService<T>::set_timeout(Session* ses, int flag) {
 	if (ses) {
 		ses->to_flag = flag;
 		if (flag & TO_EV_PING_PONG)
-			lws_set_timer_usecs(ses->wsi, U2S);
+			lws_set_timer_usecs(ses->wsi, S2U);
 	}
 }
 
@@ -208,6 +208,11 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 
 	// instance->pre_proc(wsi, reason, session, in, len);
 	switch (reason) {
+		case LWS_CALLBACK_PROTOCOL_INIT:
+		{
+			lws_sul_schedule(instance->context, lws_get_tsi(wsi), &instance->tlist, /* 함수 */, 500 * M2U);
+            break;
+		}
 		case LWS_CALLBACK_RAW_ADOPT:
 		case LWS_CALLBACK_ESTABLISHED:
 		{
@@ -240,7 +245,7 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 			instance->session_group[ses->group].insert(ses);
 			lock2.unlock();
 
-			LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CB_ "[%14p] A Session is initialized." _EC_, (void*)instance, (void*)wsi);
+			instance->log(_L_BLUE "[%14p] A Session is initialized.", (void*)wsi);
 			break;
 		}
 		case LWS_CALLBACK_RAW_RX:
@@ -262,7 +267,7 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 				} else if (len == 0) {
 					return 0;
 				} else if (len == 2) { // pong 0002{}
-					LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CY_ "[%14p] Pong" _EC_, (void*)instance, (void*)wsi);
+					instance->log(_L_BLUE "[%14p] Pong received.", (void*)wsi);
 					return 0;
 				} else if (acc.size() < 4 + len) {
 					return -1;
@@ -285,7 +290,7 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 			
 			ses->tokens--;
 
-			LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CB_ "[%14p] Frame received." _EC_, (void*)instance, (void*)wsi);
+			instance->log(_L_BLUE "[%14p] Frame received: %zu bytes.", (void*)wsi, len - in_offset);
 			break;
 		}
         case LWS_CALLBACK_RAW_WRITEABLE:
@@ -298,7 +303,7 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 				if (lws_partial_buffered(wsi)) {
 					lock.unlock();
 					lws_callback_on_writable(wsi);
-					LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CY_ "[%14p] Unsent data exist." _EC_, (void*)instance, (void*)wsi);
+					instance->log(_L_BLUE "[%14p] Unsent data exist.", (void*)wsi);
 					break;
 				}
 				std::vector<unsigned char> packet;
@@ -324,16 +329,16 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 				n = lws_write(wsi, &packet[LWS_PRE], packet.size() - LWS_PRE, flag);
 
 				if (n < 0) {
-					ERROR(_CG_ "NetworkService [%14p]" _EC_ " / " _CR_ "[%14p] Try to send minus frame.", (void*)instance,(void*)wsi);
+					instance->elog("[%14p] Try to send minus frame.", (void*)wsi);
 					return -1;
 				}
 
 				if (more) {
-					LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CY_ "[%14p] Send is deferred." _EC_, (void*)instance, (void*)wsi);
+					instance->log(_L_YELLOW "[%14p] Send is deferred.", (void*)wsi);
 					lws_callback_on_writable(wsi);
 				}
 			}
-			LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CB_ "[%14p] Frame sent." _EC_, (void*)instance, (void*)wsi);
+			instance->log(_L_BLUE "[%14p] Frame sent.", (void*)wsi);
             break;
 		}
 		case LWS_CALLBACK_RAW_CLOSE:
@@ -345,7 +350,7 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 		case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
 		{
 			instance->fl_resv = false;
-			LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CY_ "Start side action." _EC_, (void*)instance);
+			instance->log(_L_YELLOW "Start side action.");
 			std::map<lws*, std::string> dels;
 
 			std::unique_lock<std::shared_mutex> lock(instance->dr_mtx);
@@ -353,7 +358,7 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 			lock.unlock();
 			
 			if (!dels.empty()) {
-				LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CY_ "Close asynchronously: Sessions * %d." _EC_, (void*)instance, (int)dels.size());
+				instance->log(_L_YELLOW "Close asynchronously: Sessions * %d.", (int)dels.size());
 				for (auto [wsi_to_close, msg]: dels) {
 					typename NetworkService<T>::Session* ses_to_close = static_cast<typename NetworkService<T>::Session*>(lws_wsi_user(wsi_to_close));
 
@@ -369,7 +374,7 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 		}
 		case LWS_CALLBACK_FILTER_NETWORK_CONNECTION: 
 		{
-			LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CB_ "[%14p] Network connection detected." _EC_, (void*)instance, (void*)wsi);
+			instance->log(_L_BLUE "[%14p] Network connection detected.", (void*)wsi);
 			// char ip[64];
 			// lws_get_peer_addresses(wsi, lws_get_socket_fd(wsi), 0, 0, ip, sizeof(ip));
 
@@ -430,7 +435,7 @@ int NetworkService<T>::lws_callback(lws* wsi, callback_reason reason, void* sess
 			instance->session_group[ses->group].erase(it2);
 		lock2.unlock();
 
-		LOG(_CG_ "NetworkService [%14p]" _EC_ " / " _CB_ "[%14p] A Session is closed." _EC_, (void*)instance, (void*)wsi);
+		instance->log(_L_BLUE "[%14p] A Session is closed.", (void*)wsi);
 	}
 
 	return ret;

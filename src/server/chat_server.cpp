@@ -1,12 +1,11 @@
 
 
 #include "chat_server.h"
-#include "user_manager.h"
 #include "../libs/json_translator.h"
 #include "../libs/chat_res_dto.h"
 
 ChatServer::ChatServer(std::shared_ptr<NetworkService<User>> service, const int max_fd)
-	: ServerBase<User>(std::move(service), std::make_unique<JsonTranslator>(), max_fd) {}
+	: ServerBase<User>(std::move(service), std::make_unique<JsonTranslator>(), max_fd), Loggable("ChatServer", _L_BLUE, this) {}
 
 ChatServer::~ChatServer() {
 	cur_msgs.clear();

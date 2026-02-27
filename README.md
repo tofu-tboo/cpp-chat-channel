@@ -146,4 +146,3 @@
 4. .h에서 선언만 이용
 5. logger
 6. black list
-7. Server class 구조 변경: json 기반 통신을 컴포넌트로 분리 (bytes, yaml, xml로 확장 가능하게)

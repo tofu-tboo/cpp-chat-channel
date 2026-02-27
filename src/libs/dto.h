@@ -3,7 +3,6 @@
 
 #include <string>
 
-#include "socket.h"
 #include "types.h"
 #include "util.h"
 

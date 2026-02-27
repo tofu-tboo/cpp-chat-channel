@@ -16,7 +16,9 @@
 #define _CG_                   		            "\033[0;32m"
 #define _CB_                		            "\033[0;34m"
 #define _CY_                		            "\033[0;33m"
-
+#define _CM_                		            "\033[0;33m"
+#define _CC_                		            "\033[0;33m"
+	
 #ifdef DEBUG
 #define DLOG(format, ...)                       printf(format "\n", ##__VA_ARGS__)
 #else
