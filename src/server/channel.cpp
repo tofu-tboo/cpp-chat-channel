@@ -1,9 +1,8 @@
 #include "channel.h"
 #include "channel_server.h"
-#include "../libs/json_translator.h"
 #include "../libs/chat_res_dto.h"
-#include "../libs/times.h"
 #include "../libs/hash.h"
+#include "../libs/dto.h"
 
 Channel::Channel(std::shared_ptr<NetworkService<User>> service, ChannelServer* srv, ch_id_t id, const int max_conn): super(std::move(service), max_conn), channel_id(id), server(srv), empty_since(0), Loggable("Channel", _L_CYAN, this) {}
 Channel::~Channel() {}

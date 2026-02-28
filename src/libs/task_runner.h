@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <iterator>
 #include <mutex>
+#include <atomic>
 
 #include "times.h"
 #include "class.h"

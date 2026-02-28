@@ -10,12 +10,7 @@
 #define WS_NAME		("ws")
 #define TCP_NAME	("tcp")
 
-#define U2S			0.000001
-#define M2S			0.001
-#define S2U			1000000
-#define S2M			1000
-#define M2U			1000
-#define U2M			0.001
+#include "times.h"
 
 
 #include <libwebsockets.h>

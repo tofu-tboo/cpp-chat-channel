@@ -23,10 +23,10 @@
 #include <memory>
 
 #include "../libs/task_runner.h"
-#include "../libs/network_service.h"
-#include "../libs/msg_translator.h"
 #include "../libs/loggable.h"
 #include "../libs/class.h"
+#include "../libs/network_service.h"
+#include "../libs/session_event_handler.h"
 
 
 /*
@@ -40,14 +40,9 @@ ServerBase assumed that it has one channel.
 - Separate Tasks: Use TaskRunner to separate tasks like polling, deletion resolution, payload resolution. But, ServerBase only does polling and deletion resolution. The payload resolution is left to derived classes. 
 */
 
+struct Request;
 class ServerFactory;
-
-// template <typename U>
-// typedef struct {
-// 	NetworkService<U>* di_service;
-// 	const int max_fd = 256;
-// 	const msec to = 1000;
-// } Server;
+class IMsgTranslator;
 
 template <typename U>
 class ServerBase: public SessionEvHandler<U>, virtual public Loggable {

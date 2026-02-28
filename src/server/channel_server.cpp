@@ -1,5 +1,6 @@
 #include "channel_server.h"
 #include "../libs/json_translator.h"
+#include "../libs/chat_res_dto.h"
 #include "../libs/times.h"
 #include "../libs/hash.h"
 

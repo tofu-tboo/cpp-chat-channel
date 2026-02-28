@@ -20,10 +20,6 @@ static int g_channel_id = 0;
 
 typedef uint64_t msec64;
 
-msec64 now_ms() {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-}
-
 static int connect_tcp(const char* host, const char* port) {
     addrinfo hints{}, *res = nullptr;
     hints.ai_family = AF_UNSPEC;

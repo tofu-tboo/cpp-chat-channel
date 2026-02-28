@@ -21,10 +21,9 @@
 #include <queue>
 #include <set>
 #include <map>
+#include <vector>
 #include <unordered_map>
-#include <unordered_set>
-#include <shared_mutex>
-#include <libwebsockets.h>
+#include <climits>
 
 #include "dto.h"
 #include "loggable.h"
@@ -106,7 +105,7 @@ class NetworkService: virtual public Loggable {
 		virtual void close(Session* ses, const std::string& msg);
 		virtual void close(Session* ses, const unsigned char* data, size_t len) = 0;
 	func_protected:
-		void accumulate(Session* ses, const unsigned char* data, size_t len);
+		virtual void accumulate(Session* ses, const unsigned char* data, size_t len) = 0;
 
 		// for C-style libraries
 		void construct_session(Session* ses);

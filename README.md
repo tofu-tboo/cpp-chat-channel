@@ -143,6 +143,5 @@
 1. JWT 검증
 2. XSS 방지
 3. .h, .cpp 의존성 분리
-4. .h에서 선언만 이용
-5. logger
-6. black list
+4. logger
+5. black list

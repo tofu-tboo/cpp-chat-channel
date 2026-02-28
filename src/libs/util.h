@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define _EC_                                    "\033[0m"
 #define _CR_                		            "\033[0;31m"

@@ -8,6 +8,8 @@
 #define TO_EV_PING_PONG			(1)
 #define TO_EV_TOKEN_REFILL		(1 << 2)
 
+#include <libwebsockets.h>
+#include <string>
 #include "network_service.h"
 #include "set_super.h"
 #include "../dynamic_compile/dynamic_compile.h"
@@ -28,7 +30,6 @@ class LwsService: public NetworkService<T>, virtual public Loggable {
 
 		__USING_SUPER_MEM__
 		using NetworkService<T>::SessionSecret;
-		using NetworkService<T>::accumulate;
 		using NetworkService<T>::broadcast;
 		using NetworkService<T>::broadcast_group;
 		using NetworkService<T>::change_session_group;
@@ -74,6 +75,8 @@ class LwsService: public NetworkService<T>, virtual public Loggable {
 		virtual void broadcast_group(int group, const unsigned char* data, size_t len) override final;
 
 		virtual void close(Session* ses, const unsigned char* data, size_t len) override final;
+	func_protected:
+		virtual void accumulate(Session* ses, const unsigned char* data, size_t len) override final;
 	func_private:
 		void flush();
 

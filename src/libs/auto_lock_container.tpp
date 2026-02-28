@@ -1,4 +1,6 @@
 #include "auto_lock_container.h"
+#include <algorithm>
+#include <optional>
 
 // 1. Add
 template <class STL>

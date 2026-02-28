@@ -3,6 +3,9 @@
 
 #include <vector>
 #include <stdexcept>
+#include <string>
+#include <cstdarg>
+#include <cstdio>
 
 class coded_runtime_error : public std::runtime_error {
 public:

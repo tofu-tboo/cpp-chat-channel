@@ -8,6 +8,8 @@ typedef unsigned int ch_id_t;
 
 #include "../libs/chat_req_dto.h"
 #include "../libs/set_super.h"
+#include "../libs/times.h"
+#include "../libs/dto.h"
 #include "chat_server.h"
 
 class ChannelServer; // Forward declaration

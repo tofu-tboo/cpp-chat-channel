@@ -1,6 +1,8 @@
 #include "server_base.h"
 #include "../libs/msg_translator.h"
 #include "../libs/times.h"
+#include "../libs/exception.h"
+#include "../libs/network_service.h"
 
 template <typename U>
 ServerBase<U>::ServerBase(std::shared_ptr<NetworkService<U>> di_service, std::unique_ptr<IMsgTranslator> processor, const int max): service(std::move(di_service)), msg_translator(std::move(processor)), max_conn(max), cur_conn(0), is_running(true), Loggable("ServerBase", _L_BLUE, this) {

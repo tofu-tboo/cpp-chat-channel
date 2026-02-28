@@ -2,6 +2,7 @@
 #include "times.h"
 #include "hash.h"
 #include "exception.h"
+#include <vector>
 
 template <typename T>
 protocols_t LwsService<T>::protocols[] = {
@@ -122,6 +123,28 @@ void LwsService<T>::close(Session* ses, const unsigned char* data, size_t len) {
 	flush();
 }
 
+#pragma endregion
+#pragma region PROTECTED_FUNC
+template <typename T>
+void LwsService<T>::accumulate(Session* ses, const unsigned char* data, size_t len) {
+	if (!ses) throw runtime_errorf("Null session.");
+	else if (len > MAX_FRAME_SIZE) throw runtime_errorf("Frame too large.");
+
+	short extra = ses->secret->prot_id == TCP ? 4 : 0;
+	std::vector<unsigned char> packet(LWS_PRE + len + extra);
+
+	if (ses->secret->prot_id == TCP) {
+		char header[5];
+		snprintf(header, sizeof(header), "%04x", (unsigned int)len);
+		memcpy(&packet[LWS_PRE], header, 4);
+	}
+
+    if (len > 0) {
+		memcpy(&packet[LWS_PRE + extra], data, len);
+    }
+
+	send_resv.add(ses, std::move(packet));
+}
 #pragma endregion
 #pragma region PRIVATE_FUNC
 template <typename T>

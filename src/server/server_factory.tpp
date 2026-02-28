@@ -1,6 +1,5 @@
 
 #include "server_factory.h"
-#include "server_base.h"
 
 template <typename U, class S, typename... Args>
 S* ServerFactory::create(Args&&... args) {

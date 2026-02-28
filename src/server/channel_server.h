@@ -10,7 +10,7 @@
 #include "channel_factory.h"
 #include "../libs/chat_req_dto.h"
 #include "../libs/set_super.h"
-
+#include "channel_server_types.h"
 
 /* Requirement of ChannelServer
 - Manage Channels: Create and manage multiple Channel instances.
