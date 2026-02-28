@@ -5,7 +5,7 @@
 #include "../libs/util.h"
 #include "server_factory.h"
 #include "chat_server.h"
-#include "../libs/network_service.h"
+#include "../libs/lws_service.h"
 
 ChatServer* g_server = nullptr;
 
@@ -34,7 +34,7 @@ int main(int argc, char* argv[]) {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
-	auto service = std::make_shared<NetworkService<User>>(port);
+	auto service = std::make_shared<LwsService<User>>(port);
 	g_server = ServerFactory::create<User, ChatServer>(std::move(service), lobby_max_fd);
 
     g_server->proc();

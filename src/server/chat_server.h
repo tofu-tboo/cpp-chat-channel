@@ -6,6 +6,7 @@
 #include "../libs/chat_req_dto.h"
 #include "../libs/dto.h"
 #include "../libs/producer_consumer.h"
+#include "../libs/set_super.h"
 
 /* Requirement of ChatServer 
 - Payload Resolution: process received payloads from clients. The format is JSON strings.
@@ -14,9 +15,10 @@
 */
 
 class ChatServer : public ServerBase<User> {
+	SET_SUPER(ServerBase<User>);
 	protected:
-		std::multimap<msec64, std::pair<typename NetworkService<User>::Session*, MessageReqDto>> cur_msgs; // timestamped messages
-		ProducerConsumerQueue<std::pair<typename NetworkService<User>::Session*, MessageReqDto>> mq; // message queue (raw JSON strings)
+		std::multimap<msec64, std::pair<Session*, MessageReqDto>> cur_msgs; // timestamped messages
+		ProducerConsumerQueue<std::pair<Session*, MessageReqDto>> mq; // message queue (raw JSON strings)
 
 		std::shared_mutex mq_mtx;
 		std::shared_mutex cm_mtx;
@@ -30,8 +32,8 @@ class ChatServer : public ServerBase<User> {
         virtual void resolve_broadcast();
 
 		// Hooks
-		virtual void on_accept(typename NetworkService<User>::Session& ses) override;
-		virtual void handle_request(typename NetworkService<User>::Session& ses, std::unique_ptr<Request> req) override;
+		virtual void on_accept(Session& ses) override;
+		virtual void handle_request(Session& ses, std::unique_ptr<Request> req) override;
 };
 
 #endif

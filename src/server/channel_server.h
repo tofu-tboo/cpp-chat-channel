@@ -3,12 +3,13 @@
 
 #include <map>
 #include <mutex>
-#include "../libs/chat_req_dto.h"
 
 #include "server_base.h"
 #include "chat_server.h"
 #include "channel.h"
 #include "channel_factory.h"
+#include "../libs/chat_req_dto.h"
+#include "../libs/set_super.h"
 
 
 /* Requirement of ChannelServer
@@ -17,21 +18,14 @@
 
 */
 
-// Forward declare to use in JsonMessageProcessor
-template <typename U> class JsonMessageProcessor;
+// template <typename U> class JsonMessageProcessor;
 
 class ChannelServer: public ServerBase<User> {
-    public:
-        struct ChannelReport {
-			enum { JOIN } type;
-            typename NetworkService<User>::Session* from;
-			UReportDto dto;
-        };
+	SET_SUPER(ServerBase<User>);
     private:
         std::map<ch_id_t, Channel*> channels;
-		// ProducerConsumerQueue<ChannelReport> reports;
         std::mutex report_mtx;
-		std::unordered_map<typename NetworkService<User>::Session*, msec64> last_act;
+		std::unordered_map<Session*, msec64> last_act;
 
 		std::unique_ptr<ChannelFactory> channel_factory;
 
@@ -41,15 +35,15 @@ class ChannelServer: public ServerBase<User> {
         ChannelServer(std::shared_ptr<NetworkService<User>> service, const int max_fd, std::unique_ptr<ChannelFactory> factory);
         ~ChannelServer();
 		virtual bool init() override;
-		void switch_channel(typename NetworkService<User>::Session& ses, const ch_id_t from, const ch_id_t to);
+		void switch_channel(Session& ses, const ch_id_t from, const ch_id_t to);
     protected:
 
 		// virtual void resolve_close() override;
 
-		virtual void on_accept(typename NetworkService<User>::Session& ses) override;
-        virtual void handle_request(typename NetworkService<User>::Session& ses, std::unique_ptr<Request> req) override;
+		virtual void on_accept(Session& ses) override;
+        virtual void handle_request(Session& ses, std::unique_ptr<Request> req) override;
 
-		virtual void free_user(typename NetworkService<User>::Session& ses) override;
+		virtual void free_user(Session& ses) override;
 	private:
 		Channel* get_channel(const ch_id_t channel_id);
         Channel* find_or_create_channel(ch_id_t preferred_id);

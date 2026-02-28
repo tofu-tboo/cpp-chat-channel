@@ -22,9 +22,6 @@
 #include <atomic>
 #include <memory>
 
-#include "../libs/util.h"
-#include "../libs/dto.h"
-#include "../libs/socket.h"
 #include "../libs/task_runner.h"
 #include "../libs/network_service.h"
 #include "../libs/msg_translator.h"
@@ -52,8 +49,10 @@ class ServerFactory;
 // } Server;
 
 template <typename U>
-class ServerBase: public SessionEvHandler<U>, virtual protected Loggable {
+class ServerBase: public SessionEvHandler<U>, virtual public Loggable {
     protected:
+		using Session = typename NetworkService<U>::Session;
+
         int branch_id; // branch's id
 		std::shared_ptr<NetworkService<U>> service;
 		std::unique_ptr<IMsgTranslator> msg_translator;
@@ -65,7 +64,7 @@ class ServerBase: public SessionEvHandler<U>, virtual protected Loggable {
             TS_COUNT
         };
 
-        std::unordered_set<typename NetworkService<U>::Session*> nxt_close;
+        std::unordered_set<Session*> nxt_close;
 
 		std::shared_mutex nd_mtx;
 
@@ -85,19 +84,18 @@ class ServerBase: public SessionEvHandler<U>, virtual protected Loggable {
     protected:
         void resolve_close();
 
-        virtual void on_accept(typename NetworkService<U>::Session& ses);
-		virtual void on_close(typename NetworkService<U>::Session& ses) final;
-		virtual void on_recv(typename NetworkService<U>::Session& ses, const RecvStream& stream) final;
-		virtual void on_send(typename NetworkService<U>::Session& ses);
-		// virtual User translate(LwsCallbackParam&& param);
-		virtual void on_rate_limit_packet_drop(typename NetworkService<U>::Session& ses);
+        virtual void on_accept(Session& ses);
+		virtual void on_close(Session& ses) final;
+		virtual void on_recv(Session& ses, const RecvStream& stream) final;
+		virtual void on_send(Session& ses);
+		virtual void on_rate_limit_packet_drop(Session& ses);
 
-		virtual void handle_request(typename NetworkService<U>::Session& ses, std::unique_ptr<Request> req) = 0;
-
+		virtual void handle_request(Session& ses, std::unique_ptr<Request> req) = 0;
 
 
-		virtual void free_user(typename NetworkService<U>::Session& ses);
-		void resv_close(typename NetworkService<U>::Session* ses);
+
+		virtual void free_user(Session& ses);
+		void resv_close(Session* ses);
 };
 
 #include "server_base.tpp"

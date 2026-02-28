@@ -1,29 +1,21 @@
 #include "channel_server.h"
-#include "../libs/util.h"
 #include "../libs/json_translator.h"
+#include "../libs/times.h"
+#include "../libs/hash.h"
 
 ChannelServer::ChannelServer(std::shared_ptr<NetworkService<User>> service, const int max, std::unique_ptr<ChannelFactory> factory)
-	: ServerBase<User>(std::move(service), std::make_unique<JsonTranslator>(), max), channel_factory(std::move(factory)), Loggable("ChannelServer", _L_BLUE, this) {}
+	: super(std::move(service), std::make_unique<JsonTranslator>(), max), channel_factory(std::move(factory)), Loggable("ChannelServer", _L_BLUE, this) {}
 
 ChannelServer::~ChannelServer() {
     for (auto& [_, channel] : channels) {
         delete channel;
     }
 
-	// std::queue<ChannelReport> local_q = reports.pop_all();	
-    // while (!local_q.empty()) {
-    //     ChannelReport req = local_q.front();
-    //     local_q.pop();
-    //     if (req.type == ChannelReport::JOIN) {
-	// 		if (req.dto.join)
-	// 			delete req.dto.join;
-	// 	}
-    // }
     channels.clear();
 }
 
 bool ChannelServer::init() {
-	if (ServerBase<User>::init()) {
+	if (super::init()) {
 		// Periodically process switch requests from channels
 		task_runner.pushf(TS_LOGIC, AsThrottle([this]() {
 			check_lobby();
@@ -39,14 +31,14 @@ bool ChannelServer::init() {
 	return false;	
 }
 
-void ChannelServer::switch_channel(typename NetworkService<User>::Session& ses, const ch_id_t from, const ch_id_t to) {
+void ChannelServer::switch_channel(Session& ses, const ch_id_t from, const ch_id_t to) {
 	msec64 timestamp = now_ms();
 	Channel* ch_from = get_channel(from);
 	Channel* ch_to = get_channel(to);
 	
 	if (!ch_to->ping_pool()) {
 		elog(_L_CYAN "Channel %u" _L_DEFAULT " is full.", to);
-		service->send_async(&ses, std::string(R"({"type":"error","message":"The channel is full."})"));
+		service->send(&ses, std::string(R"({"type":"error","message":"The channel is full."})"));
 		return;
 	}	
 	ch_to->join_and_logging(ses, true);
@@ -54,7 +46,7 @@ void ChannelServer::switch_channel(typename NetworkService<User>::Session& ses, 
 }
 
 #pragma region PROTECTED_FUNC
-void ChannelServer::free_user(typename NetworkService<User>::Session& ses) {
+void ChannelServer::free_user(Session& ses) {
 	User* user = ses.user;
 	if (user->name) free(user->name);
 	user->name = nullptr;
@@ -64,13 +56,13 @@ void ChannelServer::free_user(typename NetworkService<User>::Session& ses) {
 	lock.unlock();
 }
 
-void ChannelServer::on_accept(typename NetworkService<User>::Session& ses) {
-	ServerBase<User>::on_accept(ses);
+void ChannelServer::on_accept(Session& ses) {
+	super::on_accept(ses);
 	std::unique_lock<std::shared_mutex> lock(la_mtx);
 	last_act[&ses] = now_ms();
 }
 
-void ChannelServer::handle_request(typename NetworkService<User>::Session& ses, std::unique_ptr<Request> req) {
+void ChannelServer::handle_request(Session& ses, std::unique_ptr<Request> req) {
 	JsonRequest* json_req = dynamic_cast<JsonRequest*>(req.get());
 	if (!json_req) return;
 
@@ -86,10 +78,10 @@ void ChannelServer::handle_request(typename NetworkService<User>::Session& ses, 
 				from->name = strdup(dto.user_name.c_str());
 
 				Channel* target_ch = find_or_create_channel(dto.channel_id);
-				target_ch->join_and_logging(const_cast<typename NetworkService<User>::Session&>(ses), false);
+				target_ch->join_and_logging(const_cast<Session&>(ses), false);
 
 				std::unique_lock<std::shared_mutex> lock(la_mtx);
-				last_act.erase(const_cast<typename NetworkService<User>::Session*>(&ses));
+				last_act.erase(const_cast<Session*>(&ses));
 				lock.unlock();
 				
 				cur_conn--;
@@ -151,7 +143,7 @@ Channel* ChannelServer::find_or_create_channel(ch_id_t preferred_id) {
 
 void ChannelServer::check_lobby() {
 	auto now = now_ms();
-	std::unordered_map<typename NetworkService<User>::Session*, msec64> next;
+	std::unordered_map<Session*, msec64> next;
 
 	std::unique_lock<std::shared_mutex> lock(la_mtx);
 	for (const auto& [session, t] : last_act) {
@@ -161,7 +153,7 @@ void ChannelServer::check_lobby() {
 		} else {
 			log(_L_YELLOW "Lobby timeout: " _L_CYAN "user %p", session->user);
 			resv_close(session);
-			service->send_async(session, std::string("Lobby timeout."));
+			service->send(session, std::string("Lobby timeout."));
 		}
 	}
 

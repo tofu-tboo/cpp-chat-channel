@@ -3,8 +3,8 @@
 
 #include <string>
 
-#include "types.h"
-#include "util.h"
+#include "times.h"
+#include "../server/channel_server_types.h"
 
 enum MsgType {
 	USER,

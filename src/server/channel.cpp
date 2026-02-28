@@ -2,12 +2,14 @@
 #include "channel_server.h"
 #include "../libs/json_translator.h"
 #include "../libs/chat_res_dto.h"
+#include "../libs/times.h"
+#include "../libs/hash.h"
 
-Channel::Channel(std::shared_ptr<NetworkService<User>> service, ChannelServer* srv, ch_id_t id, const int max_conn): ChatServer(std::move(service), max_conn), channel_id(id), server(srv), empty_since(0), Loggable("Channel", _L_CYAN, this) {}
+Channel::Channel(std::shared_ptr<NetworkService<User>> service, ChannelServer* srv, ch_id_t id, const int max_conn): super(std::move(service), max_conn), channel_id(id), server(srv), empty_since(0), Loggable("Channel", _L_CYAN, this) {}
 Channel::~Channel() {}
 
 bool Channel::init() {
-	if (!ChatServer::init()) {
+	if (!super::init()) {
 		return false;
 	}
 	task_runner.popb(TS_POLL);
@@ -18,7 +20,7 @@ void Channel::proc() {
 	task_runner.run();
 }
 
-void Channel::leave(typename NetworkService<User>::Session& ses, const MessageReqDto& msg) {
+void Channel::leave(Session& ses, const MessageReqDto& msg) {
 	cur_conn--;
 	if (cur_conn == 0) {
 		empty_since = now_ms();
@@ -30,7 +32,7 @@ void Channel::leave(typename NetworkService<User>::Session& ses, const MessageRe
 	mq.push({&ses, msg});
 }
 
-void Channel::join(typename NetworkService<User>::Session& ses, const MessageReqDto& msg) {
+void Channel::join(Session& ses, const MessageReqDto& msg) {
 	cur_conn++;
 	if (empty_since > 0) {
 		empty_since = 0;
@@ -43,7 +45,7 @@ void Channel::join(typename NetworkService<User>::Session& ses, const MessageReq
 	mq.push({&ses, msg});
 }
 
-void Channel::leave_and_logging(typename NetworkService<User>::Session& ses) {
+void Channel::leave_and_logging(Session& ses) {
 	User* user = ses.user;
 	MessageReqDto sys_msg = { .type = SYSTEM, .text = "leave", .timestamp = now_ms(), .channel_id = channel_id };
 
@@ -59,7 +61,7 @@ void Channel::leave_and_logging(typename NetworkService<User>::Session& ses) {
 	log(_L_RED "[Leave] " _L_CYAN "User %p" _L_DEFAULT " left channel %u at %lu" _L_DEFAULT, ses.user, channel_id, sys_msg.timestamp);
 }
 
-void Channel::join_and_logging(typename NetworkService<User>::Session& ses, bool re) {
+void Channel::join_and_logging(Session& ses, bool re) {
 	User* user = ses.user;
 	MessageReqDto sys_msg = { .type = SYSTEM, .timestamp = now_ms(), .channel_id = channel_id };
 
@@ -85,9 +87,9 @@ msec64 Channel::get_empty_since() const { return empty_since; }
 
 #pragma region PROTECTED_FUNC
 
-void Channel::on_accept(typename NetworkService<User>::Session& ses) {}
+void Channel::on_accept(Session& ses) {}
 
-void Channel::handle_request(typename NetworkService<User>::Session& ses, std::unique_ptr<Request> req) {
+void Channel::handle_request(Session& ses, std::unique_ptr<Request> req) {
 	JsonRequest* json_req = dynamic_cast<JsonRequest*>(req.get());
 	if (!json_req) return;
 
@@ -98,14 +100,14 @@ void Channel::handle_request(typename NetworkService<User>::Session& ses, std::u
 		case_hash("Message"):
 		case_hash("MESSAGE"):
 				// Delegate to ChatServer for messages
-				ChatServer::handle_request(ses, std::move(req));
+				super::handle_request(ses, std::move(req));
 			break;
 		case_hash("join"):
 		case_hash("Join"):
 		case_hash("JOIN"):
 			{
 				if (dto.channel_id == channel_id) return;
-				server->switch_channel(const_cast<typename NetworkService<User>::Session&>(ses), channel_id, dto.channel_id);
+				server->switch_channel(const_cast<Session&>(ses), channel_id, dto.channel_id);
 			}
 		default:
 			break;
@@ -150,11 +152,11 @@ void Channel::resolve_broadcast() {
 
     std::string frame = dtos.to_frame();
     if (!frame.empty()) {
-		service->broadcast_group_async(channel_id, frame);
+		service->broadcast_group(channel_id, frame);
     }
 }
 
-void Channel::free_user(typename NetworkService<User>::Session& ses) {
+void Channel::free_user(Session& ses) {
 	User* user = ses.user;
 	
 	MessageReqDto msg = { .type = SYSTEM, .text = "leave", .timestamp = now_ms(), .user_name = user->name ? user->name : "unknown", .channel_id = channel_id };

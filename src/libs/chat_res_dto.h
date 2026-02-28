@@ -2,8 +2,8 @@
 #define __CHAT_RES_DTO_H__
 
 #include "json.h"
-#include "types.h"
 #include "json_translator.h"
+#include "../server/channel_server_types.h"
 
 
 struct ChatResDto : public JsonResponse {

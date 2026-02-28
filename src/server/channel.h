@@ -7,11 +7,13 @@ typedef unsigned int ch_id_t;
 #include <atomic>
 
 #include "../libs/chat_req_dto.h"
+#include "../libs/set_super.h"
 #include "chat_server.h"
 
 class ChannelServer; // Forward declaration
 
 class Channel: public ChatServer {
+	SET_SUPER(ChatServer);
     private:
         ch_id_t channel_id;
         ChannelServer* server; // upward link
@@ -25,10 +27,10 @@ class Channel: public ChatServer {
 		virtual void proc() override;
 
 		// Can be polluted by other threads but protecting by ConnectionTracker's mutex
-        void leave(typename NetworkService<User>::Session& user, const MessageReqDto& msg);
-        void join(typename NetworkService<User>::Session& user, const MessageReqDto& msg);
-		void leave_and_logging(typename NetworkService<User>::Session& ses);
-		void join_and_logging(typename NetworkService<User>::Session& ses, bool re = true);
+        void leave(Session& user, const MessageReqDto& msg);
+        void join(Session& user, const MessageReqDto& msg);
+		void leave_and_logging(Session& ses);
+		void join_and_logging(Session& ses, bool re = true);
 
 		bool ping_pool();
 
@@ -37,11 +39,11 @@ class Channel: public ChatServer {
 
     protected: // Sequencially called in proc() => no needed mutex
 
-        virtual void on_accept(typename NetworkService<User>::Session& client) override;
-        virtual void handle_request(typename NetworkService<User>::Session& ses, std::unique_ptr<Request> req) override;
+        virtual void on_accept(Session& client) override;
+        virtual void handle_request(Session& ses, std::unique_ptr<Request> req) override;
         virtual void resolve_broadcast() override;
 
-		virtual void free_user(typename NetworkService<User>::Session& ses) override;
+		virtual void free_user(Session& ses) override;
 };
 
 #endif

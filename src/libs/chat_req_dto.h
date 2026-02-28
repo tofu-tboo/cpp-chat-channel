@@ -1,9 +1,11 @@
 #ifndef __CHAT_REQ_DTO_H__
 #define __CHAT_REQ_DTO_H__
 
-#include "types.h"
 #include "json.h"
 #include "json_translator.h"
+#include "exception.h"
+#include "times.h"
+#include "../server/channel_server_types.h"
 
 struct ChatReqDto: public JsonRequest {
 	std::string type;

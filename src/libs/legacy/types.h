@@ -3,7 +3,7 @@
 
 #include <cstdint>
 
-typedef int msec;
+typedef uint32_t msec;
 typedef uint64_t msec64;
 
 typedef unsigned int ch_id_t;

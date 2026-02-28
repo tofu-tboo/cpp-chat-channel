@@ -10,9 +10,9 @@ typedef struct {
 } RecvStream;
 
 template <typename T>
-class SessionEvHandler: virtual protected Loggable {
+class SessionEvHandler: virtual public Loggable {
 	private:
-		int callback(const LwsCallbackParam&);
+		int callback(const typename NetworkService<T>::CallbackParam&);
 		friend class NetworkService<T>;
 	public:
 		SessionEvHandler();
@@ -22,8 +22,7 @@ class SessionEvHandler: virtual protected Loggable {
 		virtual void on_send(typename NetworkService<T>::Session&) = 0;
 		virtual void on_close(typename NetworkService<T>::Session&) = 0;
 		virtual void on_rate_limit_packet_drop(typename NetworkService<T>::Session&) = 0;
-		virtual typename NetworkService<T>::Session& translate(const LwsCallbackParam&);
-		virtual void pre_event(const LwsCallbackParam&);
+		virtual void pre_event(const typename NetworkService<T>::CallbackParam&);
 };
 
 #include "session_event_handler.tpp"

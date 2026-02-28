@@ -5,28 +5,26 @@ template <typename T>
 SessionEvHandler<T>::SessionEvHandler(): Loggable("SessionEvHandler", _L_GREEN, this) {}
 
 template <typename T>
-int SessionEvHandler<T>::callback(const LwsCallbackParam& param) {
-
-	// Connection connection = { .wsi = param.wsi, .prot_id = param.prot_id };
-	typename NetworkService<T>::Session& ses = translate(param);
+int SessionEvHandler<T>::callback(const typename NetworkService<T>::CallbackParam& param) {
+	typename NetworkService<T>::Session& ses = *(param.ses);
 
 	try {
 		pre_event(param);
 
 		switch (param.event) {
-			case LwsCallbackParam::ACPT:
+			case NS_EV::ACPT:
 				on_accept(ses);
 				break;
-			case LwsCallbackParam::RECV:
+			case NS_EV::RECV:
 				on_recv(ses, { .data = param.in, .len = param.len});
 				break;
-			case LwsCallbackParam::SEND:
+			case NS_EV::SEND:
 				on_send(ses);
 				break;
-			case LwsCallbackParam::CLOSE:
+			case NS_EV::CLOSE:
 				on_close(ses);
 				break;
-			case LwsCallbackParam::RL_DROP:
+			case NS_EV::RL_DROP:
 				on_rate_limit_packet_drop(ses);
 				break;
 			default:
@@ -40,10 +38,4 @@ int SessionEvHandler<T>::callback(const LwsCallbackParam& param) {
 }
 
 template <typename T>
-typename NetworkService<T>::Session& SessionEvHandler<T>::translate(const LwsCallbackParam& param) {
-	// if (!param.user) return T(); // Should ensure param.user is valid in caller
-	return *static_cast<typename NetworkService<T>::Session*>(param.user); // Return reference to persistent session object
-}
-
-template <typename T>
-void SessionEvHandler<T>::pre_event(const LwsCallbackParam& param) {}
+void SessionEvHandler<T>::pre_event(const typename NetworkService<T>::CallbackParam& param) {}

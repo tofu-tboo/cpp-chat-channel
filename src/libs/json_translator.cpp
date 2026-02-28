@@ -1,4 +1,5 @@
 #include "json_translator.h"
+#include "exception.h"
 
 std::unique_ptr<Request> JsonTranslator::decode(const std::string& frame) {
 	json_error_t err;

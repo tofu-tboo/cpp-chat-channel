@@ -3,9 +3,11 @@
 
 #define MAX_FRAME_SIZE			(2048)
 
-// timeout event flag
-#define TO_EV_PING_PONG			(1)
-#define TO_EV_TOKEN_REFILL		(1 << 2)
+// Define protocol num
+#define TCP			0
+#define WS			1
+#define WS_NAME		("ws")
+#define TCP_NAME	("tcp")
 
 // Rate Limit Config
 #define RL_BURST_MAX            (20u)      // 초기/최대 버킷 크기 (패킷 수)
@@ -22,30 +24,13 @@
 
 // #include "socket.h"
 #include "dto.h"
-#include "util.h"
 #include "loggable.h"
+#include "auto_lock_container.h"
+#include "times.h"
 
-typedef struct lws_context ctx;
-typedef struct lws_context_creation_info ctx_creation_info;
-typedef struct lws_protocols protocols_t;
-typedef struct lws lws;
-typedef enum lws_callback_reasons callback_reason;
 typedef short protocol_id;
-typedef lws_sorted_usec_list_t utimer_list_t;
 
-typedef struct {
-	lws* wsi;
-	enum { NONE, ACPT, RECV, SEND, CLOSE, RL_DROP } event;
-	void* user;
-	unsigned char* in;
-	size_t len;
-	protocol_id prot_id;
-} LwsCallbackParam;
-
-typedef struct {
-	lws* wsi;
-	protocol_id prot_id;
-} Connection;
+enum NS_EV { NONE, ACPT, RECV, SEND, CLOSE, RL_DROP };
 
 template <typename T>
 class SessionEvHandler;
@@ -53,80 +38,70 @@ class SessionEvHandler;
 // NetworkService allows the packets to be limited as certain size.
 
 template <typename T>
-class NetworkService: protected Loggable {
+class NetworkService: virtual public Loggable {
+	protected:
+		struct SessionAccessor;
 	public:
 		typedef struct {
 			private:
+				friend NetworkService<T>;
+				friend SessionAccessor;
 				SessionEvHandler<T>* handler;
-				lws* wsi;
-				friend class NetworkService<T>;
+				protocol_id prot_id;
 				msec64 last_act;
 				// lws timer flag
-				int to_flag;
+				int to_flag; // TODO: lws service의 wsi와 더불어 void*로 관리 고려.
 				// Rate Limiting (Token Bucket)
 				unsigned int tokens;
 			public:
 				T* user;
-				protocol_id prot_id;
 				int group;
-
-				
 		} Session;
-	private:
-		static protocols_t protocols[];
-	private:
-		static int lws_callback(lws* wsi, callback_reason reason, void* session, void* in, size_t len);
-	private:
-		ctx* context;
-		ctx_creation_info info;
 
-		bool fl_resv;
-
+		typedef struct {
+			Session* ses;
+			NS_EV event;
+			unsigned char* in;
+			size_t len;
+		} CallbackParam;
+	protected:
 		// Queue
-		std::map<int, std::set<Session*>> session_group;
-		std::map<lws*, std::string> del_resv; // save msg as string since easier auto free
-		std::map<lws*, std::queue<std::vector<unsigned char>>> send_resv;
-
-		std::shared_mutex sg_mtx;
-		std::shared_mutex dr_mtx;
-		std::shared_mutex sr_mtx;
+		AutoLockContainer<std::map<int, std::set<Session*>>> session_group; // TODO?: AutoLockContainer<std::map<int, AutoLockContainer<std::set<Session*>>>>
+		AutoLockContainer<std::map<Session*, std::string>> del_resv; // save msg as string since easier auto free
+		AutoLockContainer<std::map<Session*, std::queue<std::vector<unsigned char>>>> send_resv;
 
 		SessionEvHandler<T>* handler; // initial client-handler
 
-		utimer_list_t tlist;
+		struct SessionAccessor {
+			static auto& handler(Session* s) { return s->handler; }
+			static auto& prot_id(Session* s) { return s->prot_id; }
+			static auto& last_act(Session* s) { return s->last_act; }
+			static auto& to_flag(Session* s) { return s->to_flag; }
+			static auto& tokens(Session* s) { return s->tokens; }
+		};
 	public:
-		NetworkService(const int port);
+		NetworkService();
 		~NetworkService();
 
 		virtual void setup(SessionEvHandler<T>* i_handler);
 
-		virtual void serve();
+		virtual void serve() = 0;
 
-		void send_async(Session* ses, const std::string& msg);
-		void send_async(Session* ses, const unsigned char* data, size_t len);
+		virtual void send(Session* ses, const std::string& msg);
+		virtual void send(Session* ses, const unsigned char* data, size_t len) = 0;
 
-		void broadcast_async(const std::string& msg);
-		void broadcast_async(const unsigned char* data, size_t len);
-		void broadcast_group_async(int group, const std::string& msg);
-		void broadcast_group_async(int group, const unsigned char* data, size_t len);
+		virtual void broadcast(const std::string& msg);
+		virtual void broadcast(const unsigned char* data, size_t len) = 0;
+		virtual void broadcast_group(int group, const std::string& msg);
+		virtual void broadcast_group(int group, const unsigned char* data, size_t len) = 0;
 
-		void change_session_group(Session* ses, int new_group);
-		void register_handler(Session* ses, SessionEvHandler<T>* handler);
+		virtual void change_session_group(Session* ses, int new_group);
+		virtual void register_handler(Session* ses, SessionEvHandler<T>* handler);
 
-		void close_async(Session* ses, const std::string& msg);
-		void close_async(Session* ses, const unsigned char* data, size_t len);
-
-		void flush();
-
-		// ctx* get_ctx() const;
-	private:
+		virtual void close(Session* ses, const std::string& msg);
+		virtual void close(Session* ses, const unsigned char* data, size_t len) = 0;
+	protected:
 		void accumulate(Session* ses, const unsigned char* data, size_t len);
-		void check_pong(Session* ses);
-
-		void set_timeout(Session* ses, int flag);
-	// protected:
-		// virtual void pre_proc(lws* wsi, callback_reason reason, void* session, void* in, size_t len);
-		// virtual void post_proc(lws* wsi, callback_reason reason, void* session, void* in, size_t len);
 };
 
 #include "network_service.tpp"

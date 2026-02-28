@@ -3,16 +3,18 @@
 #include "chat_server.h"
 #include "../libs/json_translator.h"
 #include "../libs/chat_res_dto.h"
+#include "../libs/times.h"
+#include "../libs/hash.h"
 
 ChatServer::ChatServer(std::shared_ptr<NetworkService<User>> service, const int max_fd)
-	: ServerBase<User>(std::move(service), std::make_unique<JsonTranslator>(), max_fd), Loggable("ChatServer", _L_BLUE, this) {}
+	: super(std::move(service), std::make_unique<JsonTranslator>(), max_fd), Loggable("ChatServer", _L_BLUE, this) {}
 
 ChatServer::~ChatServer() {
 	cur_msgs.clear();
 }
 
 bool ChatServer::init() {
-	if (ServerBase<User>::init()) {
+	if (super::init()) {
 		task_runner.pushb(TS_PRE, [this]() {
 			std::unique_lock<std::shared_mutex> lock(cm_mtx);
 			cur_msgs.clear();
@@ -81,12 +83,12 @@ void ChatServer::resolve_broadcast() {
 
     std::string frame = dtos.to_frame();
     if (!frame.empty()) {
-		service->broadcast_async(frame);
+		service->broadcast(frame);
     }
 }
 
-void ChatServer::on_accept(typename NetworkService<User>::Session& ses) {
-	ServerBase<User>::on_accept(ses);
+void ChatServer::on_accept(Session& ses) {
+	super::on_accept(ses);
 
 	char user_name[20];
 	snprintf(user_name, sizeof(user_name), "guest_%013llu", (unsigned long long)now_ms());
@@ -94,7 +96,7 @@ void ChatServer::on_accept(typename NetworkService<User>::Session& ses) {
 	ses.user->name = strdup(user_name);
 }
 
-void ChatServer::handle_request(typename NetworkService<User>::Session& ses, std::unique_ptr<Request> req) {
+void ChatServer::handle_request(Session& ses, std::unique_ptr<Request> req) {
 	JsonRequest* json_req = dynamic_cast<JsonRequest*>(req.get());
 	if (!json_req) return;
 
@@ -113,7 +115,7 @@ void ChatServer::handle_request(typename NetworkService<User>::Session& ses, std
 			MessageReqDto msg_req = { .type = USER, .text = dto.text, .timestamp = dto.timestamp, .user_name = user_name };
 
 			std::unique_lock<std::shared_mutex> lock(mq_mtx);
-			mq.push({const_cast<typename NetworkService<User>::Session*>(&ses), msg_req});
+			mq.push({const_cast<Session*>(&ses), msg_req});
 			break;
 		}
 	default:
