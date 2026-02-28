@@ -46,7 +46,7 @@ LwsService<T>::~LwsService() {
 template <typename T>
 void LwsService<T>::setup(SessionEvHandler<T>* i_handler) {
 	if (context) return;
-	NetworkService<T>::setup(i_handler);
+	super::setup(i_handler);
 	
 	context = lws_create_context(&info);
 	if (!context) throw runtime_errorf("Failed to create context.");
@@ -166,7 +166,7 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 	switch (reason) {
 		case LWS_CALLBACK_PROTOCOL_INIT:
 		{
-			// lws_sul_schedule(instance->context, lws_get_tsi(wsi), &instance->tlist, /* 함수 */, 500 * M2U);
+			// lws_sul_schedule(instance->context, lws_get_tsi(wsi), &instance->tlist, /* 함수 */, 500 * M2U); // TODO: tlist를 멤버로 하는 구조체 관리와 task 등록 구현
             break;
 		}
 		case LWS_CALLBACK_RAW_ADOPT:

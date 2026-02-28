@@ -212,6 +212,177 @@ def apply_define_seq_linter(keyword, project_files, color):
             print(f"{C_YELLOW}[ERROR]{C_RESET} linting {filepath}: {e}")
             sys.exit(1)
 
+def find_class_members(class_name, files_to_search, all_class_dot_h_macros):
+    """
+    Finds public and protected members of a given class.
+    Excludes constructors, destructors, and private members.
+    """
+    members = set()
+    
+    private_specifiers = {'private:'}
+    public_protected_specifiers = {'public:', 'protected:'}
+    for macro in all_class_dot_h_macros:
+        if 'private' in macro: private_specifiers.add(macro + ':')
+        elif 'public' in macro or 'protected' in macro: public_protected_specifiers.add(macro + ':')
+
+    for filepath in files_to_search:
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            class_regex = re.compile(r'(class|struct)\s+' + re.escape(class_name) + r'\s*(?::[^\{]*)?\{')
+            match = class_regex.search(content)
+            if not match: continue
+
+            # Found the class, now parse it
+            start_pos = match.end()
+            brace_count = 1
+            end_pos = start_pos
+            while brace_count > 0 and end_pos < len(content):
+                if content[end_pos] == '{': brace_count += 1
+                elif content[end_pos] == '}': brace_count -= 1
+                end_pos += 1
+            class_body = content[start_pos:end_pos-1]
+
+            class_body = re.sub(r'//.*', '', class_body)
+            class_body = re.sub(r'/\*.*?\*/', '', class_body, flags=re.DOTALL)
+
+            current_access = 'private' if match.group(1) == 'class' else 'public'
+
+            lines = class_body.splitlines()
+            i = 0
+            while i < len(lines):
+                line = lines[i].strip()
+                i += 1
+                if not line: continue
+
+                if any(line == spec for spec in private_specifiers):
+                    current_access = 'private'
+                    continue
+                if any(line == spec for spec in public_protected_specifiers):
+                    current_access = 'public'
+                    continue
+
+                if current_access == 'private': continue
+
+                # Skip nested struct/class definitions to avoid parsing their members
+                if (line.startswith('struct ') or line.startswith('class ')) and '{' in line:
+                    brace_count = line.count('{') - line.count('}')
+                    while i < len(lines) and brace_count > 0:
+                        brace_count += lines[i].count('{') - lines[i].count('}')
+                        i += 1
+                    continue
+
+                if line.startswith(('using ', 'typedef ', 'enum ', 'friend ', 'SET_SUPER', '__USING_SUPER_MEM__')): continue
+
+                terminator_pos = len(line)
+                if '(' in line: terminator_pos = min(terminator_pos, line.find('('))
+                if ';' in line: terminator_pos = min(terminator_pos, line.find(';'))
+                if '=' in line and '<' not in line[:line.find('=')]:
+                    terminator_pos = min(terminator_pos, line.find('='))
+
+                declaration_part = line[:terminator_pos].strip()
+                if not declaration_part: continue
+
+                # Extract member name, which is usually the last word before '(', ';', or '='
+                # This is a simplified regex and might not cover all edge cases.
+                match_name = re.search(r'(\w+)\s*$', declaration_part)
+                if not match_name: continue
+                
+                member_name = match_name.group(1)
+
+                if (member_name and 
+                    member_name != class_name and 
+                    not member_name.startswith('~') and
+                    not member_name.startswith('operator')):
+                    members.add(member_name)
+
+            return members
+
+        except Exception:
+            continue
+    return members
+
+def apply_expose_template_mem(keyword, project_files, color):
+    class_h_path = os.path.join(SRC_DIR, "libs", "class.h")
+    all_class_dot_h_macros = []
+    try:
+        with open(class_h_path, 'r', encoding='utf-8') as f:
+            all_class_dot_h_macros = re.findall(r'#define\s+(\w+)', f.read())
+    except Exception as e:
+        print(f"{C_YELLOW}[ERROR]{C_RESET} Could not read {class_h_path}: {e}")
+        sys.exit(1)
+
+    for filepath in project_files:
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            if keyword not in content: continue
+
+            child_class_match = re.search(r'class\s+(\w+)\s*:', content)
+            if not child_class_match: continue
+            child_class_name = child_class_match.group(1)
+
+            # Find parent class from inheritance declaration
+            # class Child : public Parent<T>, ... {
+            inheritance_match = re.search(r'class\s+' + re.escape(child_class_name) + r'\s*:\s*([^{]+)\{', content)
+            if not inheritance_match: continue
+            
+            inheritance_str = inheritance_match.group(1)
+            # Extract the first parent (assuming single inheritance or the first one is the target template parent)
+            # Matches: public|protected|private Parent<T>
+            parent_match = re.search(r'(?:public|protected|private)\s+([\w<>:,\s]+)', inheritance_str)
+            if not parent_match: continue
+            
+            full_parent_name = parent_match.group(1).strip().split(',')[0].strip() # Handle multiple inheritance
+            parent_base_name = re.match(r'(\w+)', full_parent_name).group(1)
+            
+            print(f"{color}[{keyword}]{C_RESET} Processing {child_class_name} in {filepath}")
+
+            all_headers = get_project_files(HEADER_EXTS)
+            members_to_use = find_class_members(parent_base_name, all_headers, all_class_dot_h_macros)
+            if not members_to_use: continue
+
+            keyword_line_match = re.search(r'^(\s*)' + re.escape(keyword), content, re.MULTILINE)
+            indent = keyword_line_match.group(1) if keyword_line_match else "\t"
+
+            # --- New "Block Replacement" Logic ---
+
+            # 1. Define the regex for the block to be replaced.
+            # This matches the keyword, followed by any number of 'using Parent::member;' lines.
+            block_regex = re.compile(
+                re.escape(keyword) + r'((?:\n\s*using\s+' + re.escape(full_parent_name) + r'::\w+;)*)'
+            )
+            
+            # 2. Generate the new, correct block of code.
+            new_block = keyword
+            if members_to_use:
+                using_lines = [f"{indent}using {full_parent_name}::{member};" for member in sorted(list(members_to_use))]
+                new_block += "".join(using_lines)
+
+            # 3. Find the existing block in the content.
+            match = block_regex.search(content)
+            if not match:
+                print(f"  {C_YELLOW}[WARNING]{C_RESET} Could not find a replaceable block for {keyword}. Inserting fresh.")
+                new_content = content.replace(keyword, new_block, 1)
+            else:
+                existing_block = match.group(0)
+                # 4. Compare and replace if necessary.
+                if existing_block.strip() == new_block.strip():
+                    print(f"  -> Declarations are already up-to-date.")
+                    continue
+                new_content = content.replace(existing_block, new_block, 1)
+            
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(new_content)
+            
+            print(f"  -> Updated using declarations for {len(members_to_use)} members.")
+
+        except Exception as e:
+            print(f"{C_YELLOW}[ERROR]{C_RESET} processing {filepath}: {e}")
+            sys.exit(1)
+
 def main():
     print(f"{C_CYAN}--- Dynamic Compile Start ---{C_RESET}")
     options = parse_options()
@@ -236,6 +407,8 @@ def main():
             apply_virtual_parent(keyword, header_files, color)
         elif logic_type == 'def_seq_linter':
             apply_define_seq_linter(keyword, all_code_files, color)
+        elif logic_type == 'expose_template_mem':
+            apply_expose_template_mem(keyword, header_files, color)
 
     print(f"{C_CYAN}--- Dynamic Compile End ---{C_RESET}")
 

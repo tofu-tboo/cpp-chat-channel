@@ -5,5 +5,6 @@
 
 #include "options/virtual_parent.h"
 #include "options/def_seq_linter.h"
+#include "options/expose_template_mem.h"
 
 #endif

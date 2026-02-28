@@ -8,6 +8,8 @@
 #define TO_EV_TOKEN_REFILL		(1 << 2)
 
 #include "network_service.h"
+#include "set_super.h"
+#include "../dynamic_compile/dynamic_compile.h"
 
 typedef struct lws_context ctx;
 typedef struct lws_context_creation_info ctx_creation_info;
@@ -19,13 +21,25 @@ typedef lws_sorted_usec_list_t utimer_list_t;
 
 template <typename T>
 class LwsService: public NetworkService<T>, virtual public Loggable {
+	SET_SUPER(NetworkService<T>);
 	type_protected:
-		using Session = typename NetworkService<T>::Session;
+		USING_SESSION_TYPENAME(T);
 
+		__USING_SUPER_MEM__
+		using NetworkService<T>::SessionAccessor;
 		using NetworkService<T>::accumulate;
-		using NetworkService<T>::session_group;
+		using NetworkService<T>::broadcast;
+		using NetworkService<T>::broadcast_group;
+		using NetworkService<T>::change_session_group;
+		using NetworkService<T>::close;
 		using NetworkService<T>::del_resv;
+		using NetworkService<T>::handler;
+		using NetworkService<T>::register_handler;
+		using NetworkService<T>::send;
 		using NetworkService<T>::send_resv;
+		using NetworkService<T>::serve;
+		using NetworkService<T>::session_group;
+		using NetworkService<T>::setup;
 
 		using SA = typename NetworkService<T>::SessionAccessor;
 
@@ -50,19 +64,16 @@ class LwsService: public NetworkService<T>, virtual public Loggable {
 		LwsService(const int port);
 		~LwsService();
 
-		virtual void setup(SessionEvHandler<T>* i_handler) final;
+		virtual void setup(SessionEvHandler<T>* i_handler) override final;
 
-		virtual void serve() final;
+		virtual void serve() override final;
 
-		virtual void send(Session* ses, const unsigned char* data, size_t len) final;
+		virtual void send(Session* ses, const unsigned char* data, size_t len) override final;
 
-		virtual void broadcast(const unsigned char* data, size_t len) final;
-		virtual void broadcast_group(int group, const unsigned char* data, size_t len) final;
+		virtual void broadcast(const unsigned char* data, size_t len) override final;
+		virtual void broadcast_group(int group, const unsigned char* data, size_t len) override final;
 
-		virtual void change_session_group(Session* ses, int new_group) final;
-		virtual void register_handler(Session* ses, SessionEvHandler<T>* handler) final;
-
-		virtual void close(Session* ses, const unsigned char* data, size_t len) final;
+		virtual void close(Session* ses, const unsigned char* data, size_t len) override final;
 	func_private:
 		void flush();
 

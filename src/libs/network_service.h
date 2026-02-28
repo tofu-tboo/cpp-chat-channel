@@ -3,6 +3,8 @@
 
 #define MAX_FRAME_SIZE			(2048)
 
+#define USING_SESSION_TYPENAME(T)	using Session = typename NetworkService<T>::Session
+
 // Define protocol num
 #define TCP			(0)
 #define WS			(1)

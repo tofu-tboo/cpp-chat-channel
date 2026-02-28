@@ -52,9 +52,9 @@ class ServerFactory;
 template <typename U>
 class ServerBase: public SessionEvHandler<U>, virtual public Loggable {
     type_protected:
-		using Session = typename NetworkService<U>::Session;
+		USING_SESSION_TYPENAME(U);
 
-		 enum TaskSession {
+		enum TaskSession {
             TS_PRE = 0,   	// 전처리: 큐 소비, 버퍼 정리
             TS_POLL,  		// I/O: 폴링, 이벤트 처리
             TS_LOGIC, 		// 로직: 메시지 처리, 브로드캐스트, 삭제
