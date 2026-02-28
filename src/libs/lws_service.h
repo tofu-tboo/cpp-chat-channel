@@ -4,6 +4,7 @@
 #define __CALLBACK_SAFE__
 
 // timeout event flag
+#define TO_EV_NONE				(0)
 #define TO_EV_PING_PONG			(1)
 #define TO_EV_TOKEN_REFILL		(1 << 2)
 
@@ -26,26 +27,27 @@ class LwsService: public NetworkService<T>, virtual public Loggable {
 		USING_SESSION_TYPENAME(T);
 
 		__USING_SUPER_MEM__
-		using NetworkService<T>::SessionAccessor;
+		using NetworkService<T>::SessionSecret;
 		using NetworkService<T>::accumulate;
 		using NetworkService<T>::broadcast;
 		using NetworkService<T>::broadcast_group;
 		using NetworkService<T>::change_session_group;
 		using NetworkService<T>::close;
+		using NetworkService<T>::construct_session;
 		using NetworkService<T>::del_resv;
+		using NetworkService<T>::destruct_session;
 		using NetworkService<T>::handler;
+		using NetworkService<T>::ip_conn_map;
 		using NetworkService<T>::register_handler;
 		using NetworkService<T>::send;
 		using NetworkService<T>::send_resv;
-		using NetworkService<T>::serve;
 		using NetworkService<T>::session_group;
-		using NetworkService<T>::setup;
-
-		using SA = typename NetworkService<T>::SessionAccessor;
 
 		struct LwsSession {
+			msec64 last_act;
 			int to_flag; // bit mask
 			lws* wsi;
+			LwsSession(): last_act(0), to_flag(TO_EV_NONE), wsi(nullptr) {}
 		};
 	static_var_private:
 		static protocols_t protocols[];
@@ -56,8 +58,6 @@ class LwsService: public NetworkService<T>, virtual public Loggable {
 		ctx_creation_info info;
 
 		bool fl_resv;
-
-		AutoLockContainer<std::map<Session*, lws*>> wsi_map;
 
 		utimer_list_t tlist;
 	func_public:
@@ -79,6 +79,7 @@ class LwsService: public NetworkService<T>, virtual public Loggable {
 
 		__CALLBACK_SAFE__ void check_pong(Session* ses);
 		__CALLBACK_SAFE__ void set_timeout(Session* ses, lws* wsi, int flag);
+		__CALLBACK_SAFE__ std::string get_ip(lws* wsi);
 };
 
 

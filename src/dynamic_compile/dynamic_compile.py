@@ -216,8 +216,9 @@ def find_class_members(class_name, files_to_search, all_class_dot_h_macros):
     """
     Finds public and protected members of a given class.
     Excludes constructors, destructors, and private members.
+    Returns a dict {member_name: count} to handle overloading.
     """
-    members = set()
+    members = {}
     
     private_specifiers = {'private:'}
     public_protected_specifiers = {'public:', 'protected:'}
@@ -295,7 +296,7 @@ def find_class_members(class_name, files_to_search, all_class_dot_h_macros):
                     member_name != class_name and 
                     not member_name.startswith('~') and
                     not member_name.startswith('operator')):
-                    members.add(member_name)
+                    members[member_name] = members.get(member_name, 0) + 1
 
             return members
 
@@ -341,7 +342,17 @@ def apply_expose_template_mem(keyword, project_files, color):
             print(f"{color}[{keyword}]{C_RESET} Processing {child_class_name} in {filepath}")
 
             all_headers = get_project_files(HEADER_EXTS)
-            members_to_use = find_class_members(parent_base_name, all_headers, all_class_dot_h_macros)
+            parent_members = find_class_members(parent_base_name, all_headers, all_class_dot_h_macros)
+            child_members = find_class_members(child_class_name, [filepath], all_class_dot_h_macros)
+
+            members_to_use = set()
+            for name, p_count in parent_members.items():
+                c_count = child_members.get(name, 0)
+                # 1. If child doesn't have it at all -> use it.
+                # 2. If child has it, but parent has more overloads -> use it to unhide parent's overloads.
+                if c_count == 0 or p_count > c_count:
+                    members_to_use.add(name)
+            
             if not members_to_use: continue
 
             keyword_line_match = re.search(r'^(\s*)' + re.escape(keyword), content, re.MULTILINE)
@@ -359,7 +370,7 @@ def apply_expose_template_mem(keyword, project_files, color):
             new_block = keyword
             if members_to_use:
                 using_lines = [f"{indent}using {full_parent_name}::{member};" for member in sorted(list(members_to_use))]
-                new_block += "".join(using_lines)
+                new_block += "".join(using_lines) # **절대 이 부분의 포맷을 고치지 말 것**
 
             # 3. Find the existing block in the content.
             match = block_regex.search(content)

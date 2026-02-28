@@ -1,5 +1,4 @@
 #include <climits>
-#include <new>
 #include "network_service.h"
 #include "session_event_handler.h"
 #include "exception.h"
@@ -56,7 +55,7 @@ void NetworkService<T>::change_session_group(Session* ses, int new_group) {
 
 template <typename T>
 void NetworkService<T>::register_handler(Session* ses, SessionEvHandler<T>* handler) {
-	ses->handler = handler;
+	ses->secret->handler = handler;
 }
 
 #pragma endregion
@@ -66,10 +65,10 @@ void NetworkService<T>::accumulate(Session* ses, const unsigned char* data, size
 	if (!ses) throw runtime_errorf("Null session.");
 	else if (len > MAX_FRAME_SIZE) throw runtime_errorf("Frame too large.");
 
-	short extra = ses->prot_id == TCP ? 4 : 0;
+	short extra = ses->secret->prot_id == TCP ? 4 : 0;
 	std::vector<unsigned char> packet(LWS_PRE + len + extra);
 
-	if (ses->prot_id == TCP) {
+	if (ses->secret->prot_id == TCP) {
 		char header[5];
 		snprintf(header, sizeof(header), "%04x", (unsigned int)len);
 		memcpy(&packet[LWS_PRE], header, 4);
@@ -81,3 +80,23 @@ void NetworkService<T>::accumulate(Session* ses, const unsigned char* data, size
 
 	send_resv.add(ses, std::move(packet));
 }
+
+template <typename T>
+void NetworkService<T>::construct_session(Session* ses) {
+	if (!ses) return;
+	if (!ses->secret)
+		ses->secret = new SessionSecret();
+	if (!ses->user)
+		ses->user = new T();
+}
+
+template <typename T>
+void NetworkService<T>::destruct_session(Session* ses) {
+	if (!ses) return;
+	if (ses->secret)
+		delete ses->secret;
+	if (ses->user)
+		delete ses->user;
+}
+
+#pragma endregion

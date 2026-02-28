@@ -27,7 +27,7 @@ void Loggable::log(const char* format, ...) {
 	cur_t();
 	printf(" %s", get_log_context());
 	vprintf(fmt.c_str(), args);
-	printf("\n" ___L_ESCAPE);
+	printf(___L_ESCAPE "\n");
 	va_end(args);
 };
 
@@ -41,7 +41,7 @@ void Loggable::elog(const char* format, ...) {
 	fprintf(stderr, " %s", get_log_context());
 	fprintf(stderr, _L_RED);
 	vfprintf(stderr, fmt.c_str(), args);
-	fprintf(stderr, "\n" ___L_ESCAPE);
+	fprintf(stderr, ___L_ESCAPE "\n");
 	va_end(args);
 }
 

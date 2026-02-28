@@ -6,6 +6,7 @@
 #define USING_SESSION_TYPENAME(T)	using Session = typename NetworkService<T>::Session
 
 // Define protocol num
+#define PROT_NONE	(-1)
 #define TCP			(0)
 #define WS			(1)
 #define WS_NAME		("ws")
@@ -14,6 +15,7 @@
 // Rate Limit Config
 #define RL_BURST_MAX            (20u)      // 초기/최대 버킷 크기 (패킷 수)
 #define RL_REFILL_SEC           (10)      // 리필 주기 (초)
+#define MAX_ALLOWED_WSI_PER_IP  (20)       // IP당 최대 연결 수
 
 
 #include <queue>
@@ -41,22 +43,20 @@ class SessionEvHandler;
 template <typename T>
 class NetworkService: virtual public Loggable {
 	forward_protected:
-		struct SessionAccessor;
+		struct SessionSecret;
 	type_public:
 		struct Session {
-			private:
-				friend NetworkService<T>;
-				friend SessionAccessor;
-				SessionEvHandler<T>* handler;
-				protocol_id prot_id;
-				void* extra;
-				msec64 last_act;
-				int to_flag; // TODO: last_act, lws service의 wsi와 더불어 void*로 관리 고려.
-				// Rate Limiting (Token Bucket)
-				unsigned int tokens;
-			public:
-				T* user;
-				int group;
+			SessionSecret* secret;
+			T* user;
+			int group;
+			Session(): secret(new SessionSecret()), user(new T()), group(INT_MIN) {}
+			Session(NetworkService<T>* service): secret(new SessionSecret(service)), user(new T()), group(INT_MIN) {}
+			~Session() {
+				if (secret)
+					delete secret;
+				if (user)
+					delete user;
+			}
 		};
 
 		struct CallbackParam {
@@ -66,18 +66,22 @@ class NetworkService: virtual public Loggable {
 			size_t len;
 		};
 	type_protected:
-		struct SessionAccessor {
-			static auto& handler(Session* s) { return s->handler; }
-			static auto& prot_id(Session* s) { return s->prot_id; }
-			static auto& last_act(Session* s) { return s->last_act; }
-			static auto& to_flag(Session* s) { return s->to_flag; }
-			static auto& tokens(Session* s) { return s->tokens; }
+		struct SessionSecret {
+			SessionEvHandler<T>* handler;
+			protocol_id prot_id;
+			void* extra;
+			// Rate Limiting (Token Bucket)
+			unsigned int tokens;
+			std::string ip;
+			SessionSecret(): handler(nullptr), prot_id(PROT_NONE), extra(nullptr), tokens(0) {}
+			SessionSecret(NetworkService<T>* service): handler(service->handler), prot_id(PROT_NONE), extra(nullptr), tokens(RL_BURST_MAX) {}
 		};
 	var_protected:
 		// Queue
 		AutoLockContainer<std::map<int, std::set<Session*>>> session_group; // TODO?: AutoLockContainer<std::map<int, AutoLockContainer<std::set<Session*>>>>
 		AutoLockContainer<std::map<Session*, std::string>> del_resv; // save msg as string since easier auto free
 		AutoLockContainer<std::map<Session*, std::queue<std::vector<unsigned char>>>> send_resv;
+		AutoLockContainer<std::unordered_map<std::string, int>> ip_conn_map;
 
 		SessionEvHandler<T>* handler; // initial client-handler
 	func_public:
@@ -103,6 +107,10 @@ class NetworkService: virtual public Loggable {
 		virtual void close(Session* ses, const unsigned char* data, size_t len) = 0;
 	func_protected:
 		void accumulate(Session* ses, const unsigned char* data, size_t len);
+
+		// for C-style libraries
+		void construct_session(Session* ses);
+		void destruct_session(Session* ses);
 };
 
 #include "network_service.tpp"

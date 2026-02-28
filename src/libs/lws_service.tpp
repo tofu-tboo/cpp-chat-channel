@@ -64,13 +64,15 @@ void LwsService<T>::send(Session* ses, const unsigned char* data, size_t len) {
 		elog("Null Session");
 		return;
 	}
-	accumulate(ses, data, len);
-	lws* wsi;
-	if (wsi_map.get(ses, wsi)) {
-		lws_callback_on_writable(wsi);
-	} else {
-		elog("wsi_map does not contain Session %p.", (void*)ses);
+	LwsSession* extra = static_cast<LwsSession*>(ses->secret->extra);
+	lws* wsi = extra->wsi;
+	if (!wsi) {
+		elog("Null wsi");
+		return;
 	}
+
+	accumulate(ses, data, len);
+	lws_callback_on_writable(wsi);
 	flush();
 }
 
@@ -79,14 +81,15 @@ void LwsService<T>::broadcast(const unsigned char* data, size_t len) {
 	session_group.task([this, data, len](auto& ses_group) {
 		for (auto& [group, sessions] : ses_group) {
 			for (auto ses : sessions) {
+				LwsSession* extra = static_cast<LwsSession*>(ses->secret->extra);
+				lws* wsi = extra->wsi;
+				if (!wsi) {
+					elog("Null wsi");
+					return;
+				}
+
 				accumulate(ses, data, len);
-				lws* wsi;
-				if (wsi_map.get(ses, wsi)) {
-					lws_callback_on_writable(wsi);
-				}
-				else {
-					elog("wsi_map does not contain Session %p.", (void*)ses);
-				}
+				lws_callback_on_writable(wsi);
 			}
 		}
 	});
@@ -97,14 +100,15 @@ template <typename T>
 void LwsService<T>::broadcast_group(int group, const unsigned char* data, size_t len) {
 	session_group.task([this, group, data, len](auto& ses_group) {
 		for (auto ses: ses_group[group]) {
+			LwsSession* extra = static_cast<LwsSession*>(ses->secret->extra);
+			lws* wsi = extra->wsi;
+			if (!wsi) {
+				elog("Null wsi");
+				return;
+			}
+
 			accumulate(ses, data, len);
-			lws* wsi;
-			if (wsi_map.get(ses, wsi)) {
-				lws_callback_on_writable(wsi);
-			}
-			else {
-				elog("wsi_map does not contain Session %p.", (void*)ses);
-			}
+			lws_callback_on_writable(wsi);
 		}
 	});
 	flush();
@@ -132,13 +136,14 @@ void LwsService<T>::flush() {
 template <typename T>
 __CALLBACK_SAFE__ void LwsService<T>::check_pong(Session* ses) {
 	msec64 now = now_ms();
+	LwsSession* extra = static_cast<LwsSession*>(ses->secret->extra);
 	
-	if (ses && SA::prot_id(ses) == TCP && SA::last_act(ses)) {
-		if (now - SA::last_act(ses) > 10 * S2M) {
+	if (ses && ses->secret->prot_id == TCP && extra->last_act) {
+		if (now - extra->last_act > 10 * S2M) {
 			close(ses, std::string(""));
 			log(_L_BLUE "Failed ping-pong of raw TCP Session (%p).", (void*)ses);
 		}
-		else if (now - SA::last_act(ses) > 5 * S2M) {
+		else if (now - extra->last_act > 5 * S2M) {
 			send(ses, std::string("-")); // ping
 			log(_L_BLUE "Ping raw TCP Session (%p).", (void*)ses);
 		}
@@ -148,10 +153,19 @@ __CALLBACK_SAFE__ void LwsService<T>::check_pong(Session* ses) {
 template <typename T>
 __CALLBACK_SAFE__ void LwsService<T>::set_timeout(Session* ses, lws* wsi, int flag) {
 	if (ses) {
-		SA::to_flag(ses) = flag;
+		LwsSession* extra = static_cast<LwsSession*>(ses->secret->extra);
+		
+		extra->to_flag = flag;
 		if (flag & TO_EV_PING_PONG)
 			lws_set_timer_usecs(wsi, S2U);
 	}
+}
+
+template <typename T>
+__CALLBACK_SAFE__ std::string LwsService<T>::get_ip(lws* wsi) {
+	char buf[64];
+	const char* ret = lws_get_peer_simple(wsi, buf, sizeof(buf));
+	return ret ? std::string(ret) : "";
 }
 
 template <typename T>
@@ -174,19 +188,35 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 		{
 			event = NS_EV::ACPT;
 
+			std::string ip = instance->get_ip(wsi);
+			int current_conn = 0;
+			instance->ip_conn_map.get(ip, current_conn);
+			instance->log(_L_BLUE "[%14p] Network connection detected at %s.", (void*)ses, ip.c_str());
+
+			if (current_conn >= MAX_ALLOWED_WSI_PER_IP) {
+				instance->log(_L_YELLOW "[%14p] IP connection limits.", (void*)ses);
+				return -1;
+			}
+
+			new (ses) Session(instance);
+
+			ses->secret->ip = ip;
+			instance->ip_conn_map.task([ip](auto& map) {
+				map[ip]++;
+			});
+
 			switch_hash(lws_get_protocol(wsi)->name) {
 				case_hash(WS_NAME):
-					SA::prot_id(ses) = WS;
+					ses->secret->prot_id = WS;
 					break;
 				case_hash(TCP_NAME):
-					SA::prot_id(ses) = TCP;
+					ses->secret->prot_id = TCP;
 					break;
 			}
-			SA::handler(ses) = static_cast<SessionEvHandler<T>*>(instance->handler);
-			ses->user = new T();
-			ses->group = INT_MIN; //reserved
-			SA::last_act(ses) = now_ms();
-			SA::tokens(ses) = RL_BURST_MAX; // 초기 접속 시 최대치 부여
+
+			LwsSession* new_extra = new LwsSession();
+			new_extra->wsi = wsi;
+			ses->secret->extra = new_extra;
 
 			if (reason == LWS_CALLBACK_RAW_ADOPT) {
 				instance->set_timeout(ses, wsi, TO_EV_PING_PONG); // set TCP ping-pong timer
@@ -196,7 +226,6 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 
 			instance->session_group.add(ses->group, ses); 
 			
-			instance->wsi_map.add(ses, wsi);
 
 			instance->log(_L_BLUE "[%14p] A Session is initialized.", (void*)ses);
 			break;
@@ -206,7 +235,8 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 			// Do only length validation
 			std::string acc(static_cast<const char*>(in), len);
 
-			SA::last_act(ses) = now_ms();
+			LwsSession* extra = static_cast<LwsSession*>(ses->secret->extra);
+			extra->last_act = now_ms();
 			if (acc.size() >= 4) {
 				uint32_t len = 0;
 				try {
@@ -233,15 +263,15 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 		{
 			event = NS_EV::RECV;
 
-			if (SA::tokens(ses) == RL_BURST_MAX)
+			if (ses->secret->tokens == RL_BURST_MAX)
 				instance->set_timeout(ses, wsi, TO_EV_TOKEN_REFILL);
-			else if (SA::tokens(ses) == 0) {
+			else if (ses->secret->tokens == 0) {
 				event = NS_EV::RL_DROP;
 				lws_rx_flow_control(wsi, 0);
 				break;
 			}
 			
-			SA::tokens(ses)--;
+			ses->secret->tokens--;
 
 			instance->log(_L_BLUE "[%14p] Frame received: %zu bytes.", (void*)ses, len - in_offset);
 			break;
@@ -268,7 +298,7 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 				
 			int n;
 			lws_write_protocol flag;
-			switch (SA::prot_id(ses)) {
+			switch (ses->secret->prot_id) {
 				case WS:
 					flag = LWS_WRITE_TEXT;
 					break;
@@ -310,9 +340,10 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 			if (!dels.empty()) {
 				instance->log(_L_YELLOW "Close asynchronously: Sessions * %d.", (int)dels.size());
 				for (auto [ses_to_close, msg]: dels) {
-					lws* wsi_to_close;
+					LwsSession* extra = static_cast<LwsSession*>(ses_to_close->secret->extra);
+					lws* wsi_to_close = extra->wsi;
 
-					if (instance->wsi_map.get(ses_to_close, wsi_to_close) && SA::prot_id(ses_to_close) == WS) {
+					if (wsi_to_close && ses_to_close->secret->prot_id == WS) {
 						lws_close_reason(wsi_to_close, LWS_CLOSE_STATUS_NORMAL, reinterpret_cast<unsigned char*>(msg.data()), msg.size());
 					}
 				
@@ -324,29 +355,19 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 		}
 		case LWS_CALLBACK_FILTER_NETWORK_CONNECTION: 
 		{
-			instance->log(_L_BLUE "[%14p] Network connection detected.", (void*)ses);
-			// char ip[64];
-			// lws_get_peer_addresses(wsi, lws_get_socket_fd(wsi), 0, 0, ip, sizeof(ip));
-
-			// // 2. 현재 해당 IP의 연결 수를 카운트 (내부 Map 등 활용)
-			// int current_conn = get_connection_count_by_ip(ip);
-
-			// // 3. 임계치 초과 시 연결 거부
-			// if (current_conn >= MAX_ALLOWED_WSI_PER_IP) {
-			// 	printf("IP %s: 연결 한도 초과로 차단합니다.\n", ip);
-			// 	return -1; // 여기서 -1을 리턴하면 소켓 수락 단계에서 바로 끊김
-			// }
+			
 			break;
 		}
 		case LWS_CALLBACK_TIMER:
 		{
-			if (SA::to_flag(ses) & TO_EV_PING_PONG) {
+			LwsSession* extra = static_cast<LwsSession*>(ses->secret->extra);
+			if (extra->to_flag & TO_EV_PING_PONG) {
 				instance->check_pong(ses);
 				instance->set_timeout(ses, wsi, TO_EV_PING_PONG);
 			}
-			if (SA::to_flag(ses) & TO_EV_TOKEN_REFILL) {
-				SA::to_flag(ses) ^= TO_EV_TOKEN_REFILL;
-				SA::tokens(ses) = RL_BURST_MAX;
+			if (extra->to_flag & TO_EV_TOKEN_REFILL) {
+				extra->to_flag ^= TO_EV_TOKEN_REFILL;
+				ses->secret->tokens = RL_BURST_MAX;
 				lws_rx_flow_control(wsi, 1);
 			}
 			break;
@@ -359,26 +380,35 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 		return 0;
 
 	int ret = 0;
-	if (ses) {
-		handler = SA::handler(ses);
+	if (ses && ses->secret) {
+		handler = ses->secret->handler;
 		ret = handler->callback({ .ses = ses, .event = event, .in = static_cast<unsigned char*>(in) + in_offset, .len = len - in_offset });
-	}
 
-	// Deferred cleanup
-	if (event == NS_EV::CLOSE) {
-		if (ses->user)
-			delete ses->user;
+		// Deferred cleanup
+		if (event == NS_EV::CLOSE) {
+			LwsSession* extra = static_cast<LwsSession*>(ses->secret->extra);
+			if (extra)
+				delete extra;
+			
+			if (!ses->secret->ip.empty()) {
+				instance->ip_conn_map.task([ip = ses->secret->ip](auto& map) {
+					if (map.find(ip) != map.end()) {
+						map[ip]--;
+						if (map[ip] <= 0) map.erase(ip);
+					}
+				});
+			}
+			ses->~Session();
 
-		instance->send_resv.del(ses);
-		
-		instance->session_group.task([ses](auto& group_map) {
-			if (group_map.find(ses->group) != group_map.end())
-				group_map[ses->group].erase(ses);
-		});
+			instance->send_resv.del(ses);
+			
+			instance->session_group.task([ses](auto& group_map) {
+				if (group_map.find(ses->group) != group_map.end())
+					group_map[ses->group].erase(ses);
+			});
 
-		instance->wsi_map.del(ses);
-
-		instance->log(_L_BLUE "[%14p] A Session is closed.", (void*)ses);
+			instance->log(_L_BLUE "[%14p] A Session is closed.", (void*)ses);
+		}
 	}
 
 	return ret;
