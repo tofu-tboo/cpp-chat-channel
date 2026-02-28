@@ -14,12 +14,12 @@ class ChannelServer; // Forward declaration
 
 class Channel: public ChatServer {
 	SET_SUPER(ChatServer);
-    private:
+    var_private:
         ch_id_t channel_id;
         ChannelServer* server; // upward link
 
 		std::atomic<msec64> empty_since;
-    public:
+    func_public:
         Channel(std::shared_ptr<NetworkService<User>> service, ChannelServer* srv, ch_id_t id, const int max = 256);
         ~Channel();
 
@@ -37,7 +37,7 @@ class Channel: public ChatServer {
 		msec64 get_empty_since() const;
 		bool is_stopped() const;
 
-    protected: // Sequencially called in proc() => no needed mutex
+    func_protected: // Sequencially called in proc() => no needed mutex
 
         virtual void on_accept(Session& client) override;
         virtual void handle_request(Session& ses, std::unique_ptr<Request> req) override;

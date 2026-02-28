@@ -2,6 +2,7 @@
 #define __SESSION_EVENT_HANDLER_H__
 
 #include "loggable.h"
+#include "class.h"
 #include "network_service.h"
 
 typedef struct {
@@ -11,10 +12,9 @@ typedef struct {
 
 template <typename T>
 class SessionEvHandler: virtual public Loggable {
-	private:
+	func_public:
 		int callback(const typename NetworkService<T>::CallbackParam&);
-		friend class NetworkService<T>;
-	public:
+	func_protected:
 		SessionEvHandler();
 
 		virtual void on_accept(typename NetworkService<T>::Session&) = 0;

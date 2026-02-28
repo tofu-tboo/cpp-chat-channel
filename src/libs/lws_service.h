@@ -18,12 +18,10 @@ typedef lws_sorted_usec_list_t utimer_list_t;
 
 
 template <typename T>
-class LwsService: public NetworkService<T> {
-	protected:
+class LwsService: public NetworkService<T>, virtual public Loggable {
+	type_protected:
 		using Session = typename NetworkService<T>::Session;
 
-		using NetworkService<T>::log;
-		using NetworkService<T>::elog;
 		using NetworkService<T>::accumulate;
 		using NetworkService<T>::session_group;
 		using NetworkService<T>::del_resv;
@@ -34,12 +32,12 @@ class LwsService: public NetworkService<T> {
 		struct LwsSession {
 			int to_flag; // bit mask
 			lws* wsi;
-		}
-	private:
+		};
+	static_var_private:
 		static protocols_t protocols[];
-	private:
+	static_func_private:
 		static int lws_callback(lws* wsi, callback_reason reason, void* session, void* in, size_t len);
-	private:
+	var_private:
 		ctx* context;
 		ctx_creation_info info;
 
@@ -48,31 +46,27 @@ class LwsService: public NetworkService<T> {
 		AutoLockContainer<std::map<Session*, lws*>> wsi_map;
 
 		utimer_list_t tlist;
-	public:
+	func_public:
 		LwsService(const int port);
 		~LwsService();
 
-		virtual void setup(SessionEvHandler<T>* i_handler);
+		virtual void setup(SessionEvHandler<T>* i_handler) final;
 
-		virtual void serve();
+		virtual void serve() final;
 
-		virtual void send(Session* ses, const std::string& msg);
-		virtual void send(Session* ses, const unsigned char* data, size_t len);
+		virtual void send(Session* ses, const unsigned char* data, size_t len) final;
 
-		virtual void broadcast(const std::string& msg);
-		virtual void broadcast(const unsigned char* data, size_t len);
-		virtual void broadcast_group(int group, const std::string& msg);
-		virtual void broadcast_group(int group, const unsigned char* data, size_t len);
+		virtual void broadcast(const unsigned char* data, size_t len) final;
+		virtual void broadcast_group(int group, const unsigned char* data, size_t len) final;
 
-		virtual void change_session_group(Session* ses, int new_group);
-		virtual void register_handler(Session* ses, SessionEvHandler<T>* handler);
+		virtual void change_session_group(Session* ses, int new_group) final;
+		virtual void register_handler(Session* ses, SessionEvHandler<T>* handler) final;
 
-		virtual void close(Session* ses, const std::string& msg);
-		virtual void close(Session* ses, const unsigned char* data, size_t len);
-	private:
+		virtual void close(Session* ses, const unsigned char* data, size_t len) final;
+	func_private:
 		void flush();
-		__CALLBACK_SAFE__ void check_pong(Session* ses);
 
+		__CALLBACK_SAFE__ void check_pong(Session* ses);
 		__CALLBACK_SAFE__ void set_timeout(Session* ses, lws* wsi, int flag);
 };
 

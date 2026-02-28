@@ -16,17 +16,17 @@
 
 class ChatServer : public ServerBase<User> {
 	SET_SUPER(ServerBase<User>);
-	protected:
+	var_protected:
 		std::multimap<msec64, std::pair<Session*, MessageReqDto>> cur_msgs; // timestamped messages
 		ProducerConsumerQueue<std::pair<Session*, MessageReqDto>> mq; // message queue (raw JSON strings)
 
 		std::shared_mutex mq_mtx;
 		std::shared_mutex cm_mtx;
-	public:
+	func_public:
 		ChatServer(std::shared_ptr<NetworkService<User>> service, const int max_fd);
 		~ChatServer();
 		virtual bool init() override;
-	protected:
+	func_protected:
 
 		virtual void resolve_timestamps();
         virtual void resolve_broadcast();

@@ -12,24 +12,25 @@
 
 #include <string>
 
+#include "class.h"
 #include "../dynamic_compile/dynamic_compile.h"
 __DYNAMIC_INCLUDES__
 
 __virtual_parent__ class Loggable {
-protected:
-    std::string _log_header;
-	std::string _color;
-protected:
-    Loggable(std::string className, std::string color, void* ptr = nullptr);
+	var_protected:
+		std::string _log_header;
+		std::string _color;
+	func_protected:
+		Loggable(std::string className, std::string color, void* ptr = nullptr);
 
-    const char* get_log_context() const;
+		const char* get_log_context() const;
 
-	void log(const char* format, ...);
-	void elog(const char* format, ...);
-	void cur_t();
+		void log(const char* format, ...);
+		void elog(const char* format, ...);
+		void cur_t();
 
-private:
-	void repl(std::string& str, const std::string& sub);
+	func_private:
+		void repl(std::string& str, const std::string& sub);
 };
 
 #endif

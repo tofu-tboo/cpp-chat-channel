@@ -4,8 +4,8 @@
 #define MAX_FRAME_SIZE			(2048)
 
 // Define protocol num
-#define TCP			0
-#define WS			1
+#define TCP			(0)
+#define WS			(1)
 #define WS_NAME		("ws")
 #define TCP_NAME	("tcp")
 
@@ -22,11 +22,11 @@
 #include <shared_mutex>
 #include <libwebsockets.h>
 
-// #include "socket.h"
 #include "dto.h"
 #include "loggable.h"
 #include "auto_lock_container.h"
 #include "times.h"
+#include "class.h"
 
 typedef short protocol_id;
 
@@ -36,42 +36,34 @@ template <typename T>
 class SessionEvHandler;
 
 // NetworkService allows the packets to be limited as certain size.
-
 template <typename T>
 class NetworkService: virtual public Loggable {
-	protected:
+	forward_protected:
 		struct SessionAccessor;
-	public:
-		typedef struct {
+	type_public:
+		struct Session {
 			private:
 				friend NetworkService<T>;
 				friend SessionAccessor;
 				SessionEvHandler<T>* handler;
 				protocol_id prot_id;
+				void* extra;
 				msec64 last_act;
-				// lws timer flag
-				int to_flag; // TODO: lws service의 wsi와 더불어 void*로 관리 고려.
+				int to_flag; // TODO: last_act, lws service의 wsi와 더불어 void*로 관리 고려.
 				// Rate Limiting (Token Bucket)
 				unsigned int tokens;
 			public:
 				T* user;
 				int group;
-		} Session;
+		};
 
-		typedef struct {
+		struct CallbackParam {
 			Session* ses;
 			NS_EV event;
 			unsigned char* in;
 			size_t len;
-		} CallbackParam;
-	protected:
-		// Queue
-		AutoLockContainer<std::map<int, std::set<Session*>>> session_group; // TODO?: AutoLockContainer<std::map<int, AutoLockContainer<std::set<Session*>>>>
-		AutoLockContainer<std::map<Session*, std::string>> del_resv; // save msg as string since easier auto free
-		AutoLockContainer<std::map<Session*, std::queue<std::vector<unsigned char>>>> send_resv;
-
-		SessionEvHandler<T>* handler; // initial client-handler
-
+		};
+	type_protected:
 		struct SessionAccessor {
 			static auto& handler(Session* s) { return s->handler; }
 			static auto& prot_id(Session* s) { return s->prot_id; }
@@ -79,7 +71,14 @@ class NetworkService: virtual public Loggable {
 			static auto& to_flag(Session* s) { return s->to_flag; }
 			static auto& tokens(Session* s) { return s->tokens; }
 		};
-	public:
+	var_protected:
+		// Queue
+		AutoLockContainer<std::map<int, std::set<Session*>>> session_group; // TODO?: AutoLockContainer<std::map<int, AutoLockContainer<std::set<Session*>>>>
+		AutoLockContainer<std::map<Session*, std::string>> del_resv; // save msg as string since easier auto free
+		AutoLockContainer<std::map<Session*, std::queue<std::vector<unsigned char>>>> send_resv;
+
+		SessionEvHandler<T>* handler; // initial client-handler
+	func_public:
 		NetworkService();
 		~NetworkService();
 
@@ -100,7 +99,7 @@ class NetworkService: virtual public Loggable {
 
 		virtual void close(Session* ses, const std::string& msg);
 		virtual void close(Session* ses, const unsigned char* data, size_t len) = 0;
-	protected:
+	func_protected:
 		void accumulate(Session* ses, const unsigned char* data, size_t len);
 };
 

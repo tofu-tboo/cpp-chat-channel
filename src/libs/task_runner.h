@@ -9,17 +9,19 @@
 #include <mutex>
 
 #include "times.h"
+#include "class.h"
 
 template <typename Fn>
 class TaskRunner {
-    private:
+    type_private:
         struct Task {
             bool once;
             std::function<Fn> func;
         };
+	var_private:
         std::vector<std::deque<Task>> tasks;
         mutable std::mutex mtx;
-    public:
+    func_public:
         ~TaskRunner() = default;
         
         void push_oncef(const unsigned int which, const std::function<Fn>& func);
@@ -35,7 +37,7 @@ class TaskRunner {
 		void clear();
         
         void run();
-    private:
+    func_private:
         std::deque<Task>& session_at(unsigned int idx);
         void _pushb(std::deque<Task>& session, bool flag, const std::function<Fn>& func);
         void _pushf(std::deque<Task>& session, bool flag, const std::function<Fn>& func);

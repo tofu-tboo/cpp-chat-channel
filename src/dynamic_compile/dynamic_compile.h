@@ -4,5 +4,6 @@
 #define __DYNAMIC_INCLUDES__
 
 #include "options/virtual_parent.h"
+#include "options/def_seq_linter.h"
 
 #endif

@@ -22,7 +22,7 @@
 
 class ChannelServer: public ServerBase<User> {
 	SET_SUPER(ServerBase<User>);
-    private:
+    var_private:
         std::map<ch_id_t, Channel*> channels;
         std::mutex report_mtx;
 		std::unordered_map<Session*, msec64> last_act;
@@ -31,12 +31,12 @@ class ChannelServer: public ServerBase<User> {
 
 		std::shared_mutex la_mtx;
 		std::shared_mutex chs_mtx;
-    public:
+    func_public:
         ChannelServer(std::shared_ptr<NetworkService<User>> service, const int max_fd, std::unique_ptr<ChannelFactory> factory);
         ~ChannelServer();
 		virtual bool init() override;
 		void switch_channel(Session& ses, const ch_id_t from, const ch_id_t to);
-    protected:
+    func_protected:
 
 		// virtual void resolve_close() override;
 
@@ -44,7 +44,7 @@ class ChannelServer: public ServerBase<User> {
         virtual void handle_request(Session& ses, std::unique_ptr<Request> req) override;
 
 		virtual void free_user(Session& ses) override;
-	private:
+	func_private:
 		Channel* get_channel(const ch_id_t channel_id);
         Channel* find_or_create_channel(ch_id_t preferred_id);
 		void check_lobby();

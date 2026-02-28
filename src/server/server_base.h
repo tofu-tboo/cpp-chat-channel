@@ -26,6 +26,7 @@
 #include "../libs/network_service.h"
 #include "../libs/msg_translator.h"
 #include "../libs/loggable.h"
+#include "../libs/class.h"
 
 
 /*
@@ -50,19 +51,19 @@ class ServerFactory;
 
 template <typename U>
 class ServerBase: public SessionEvHandler<U>, virtual public Loggable {
-    protected:
+    type_protected:
 		using Session = typename NetworkService<U>::Session;
 
-        int branch_id; // branch's id
-		std::shared_ptr<NetworkService<U>> service;
-		std::unique_ptr<IMsgTranslator> msg_translator;
-
-        enum TaskSession {
+		 enum TaskSession {
             TS_PRE = 0,   	// 전처리: 큐 소비, 버퍼 정리
             TS_POLL,  		// I/O: 폴링, 이벤트 처리
             TS_LOGIC, 		// 로직: 메시지 처리, 브로드캐스트, 삭제
             TS_COUNT
         };
+	var_protected:
+        int branch_id; // branch's id
+		std::shared_ptr<NetworkService<U>> service;
+		std::unique_ptr<IMsgTranslator> msg_translator;
 
         std::unordered_set<Session*> nxt_close;
 
@@ -73,7 +74,7 @@ class ServerBase: public SessionEvHandler<U>, virtual public Loggable {
 
 		unsigned int max_conn;
 		std::atomic<unsigned int> cur_conn;
-    public:
+    func_public:
         ServerBase(std::shared_ptr<NetworkService<U>> di_service, std::unique_ptr<IMsgTranslator> processor, const int max_fd = 256);
         virtual ~ServerBase();
 
@@ -81,7 +82,7 @@ class ServerBase: public SessionEvHandler<U>, virtual public Loggable {
         virtual void proc(); // 외부에서의 서버 진입점
         void stop();
 
-    protected:
+    func_protected:
         void resolve_close();
 
         virtual void on_accept(Session& ses);
@@ -91,8 +92,6 @@ class ServerBase: public SessionEvHandler<U>, virtual public Loggable {
 		virtual void on_rate_limit_packet_drop(Session& ses);
 
 		virtual void handle_request(Session& ses, std::unique_ptr<Request> req) = 0;
-
-
 
 		virtual void free_user(Session& ses);
 		void resv_close(Session* ses);
