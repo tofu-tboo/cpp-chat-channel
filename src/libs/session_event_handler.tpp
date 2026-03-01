@@ -5,8 +5,8 @@ template <typename T>
 SessionEvHandler<T>::SessionEvHandler(): Loggable("SessionEvHandler", _L_GREEN, this) {}
 
 template <typename T>
-int SessionEvHandler<T>::callback(const typename NetworkService<T>::CallbackParam& param) {
-	typename NetworkService<T>::Session& ses = *(param.ses);
+int SessionEvHandler<T>::callback(const CallbackParam& param) {
+	Session& ses = *(param.ses);
 
 	try {
 		pre_event(param);
@@ -38,4 +38,4 @@ int SessionEvHandler<T>::callback(const typename NetworkService<T>::CallbackPara
 }
 
 template <typename T>
-void SessionEvHandler<T>::pre_event(const typename NetworkService<T>::CallbackParam& param) {}
+void SessionEvHandler<T>::pre_event(const CallbackParam& param) {}

@@ -22,7 +22,12 @@ protocols_t LwsService<T>::protocols[] = {
 };
 
 template <typename T>
-LwsService<T>::LwsService(const int port, const int tcnt): super(tcnt) context(nullptr), fl_resv(false), Loggable("LwsService", _L_GREEN, this) {
+thread_local int LwsService<T>::tsi = 0;
+
+template <typename T>
+LwsService<T>::LwsService(const port_t port, const size_t tcnt): context(nullptr), fl_resv(false), Loggable("LwsService", _L_GREEN, this) {
+	thread_pool = new ThreadPool<T, "lws">(tcnt);
+
 	// Set context info
 	memset(&info, 0, sizeof(info));
 	info.port = port;
@@ -30,7 +35,7 @@ LwsService<T>::LwsService(const int port, const int tcnt): super(tcnt) context(n
 	info.options = LWS_SERVER_OPTION_FALLBACK_TO_RAW | LWS_SERVER_OPTION_DISABLE_OS_CA_CERTS; // TCP & WS compatibility
 	info.timeout_secs = 15; // WS handshake timeout
 	// info.fd_limit_per_thread = int;
-	info.count_threads = thread_cnt;
+	info.count_threads = thread_pool->get_size();
 	info.user = this;
 
 	// Set sul wrapper
@@ -50,17 +55,23 @@ LwsService<T>::~LwsService() {
 
 #pragma region PUBLIC_FUNC
 template <typename T>
-void LwsService<T>::setup(SessionEvHandler<T>* i_handler) {
+void LwsService<T>::setup(SessionEvHandler<T>* i_handler, const std::function<void()>& task) {
 	if (context) return;
-	super::setup(i_handler);
 	
 	context = lws_create_context(&info);
 	if (!context) throw runtime_errorf("Failed to create context.");
+
+	int supported = lws_get_count_threads(context);
+	if (supported < (int)info.count_threads) {
+		throw runtime_errorf("LWS context supports %d threads, but %d requested. Rebuild libwebsockets with LWS_MAX_SMP > 1.", supported, info.count_threads);
+	}
+	
+	super::setup(i_handler, task);
 }
 
 template <typename T>
 void LwsService<T>::serve() {
-	lws_service(context, 0);
+	lws_service_tsi(context, 10, tsi);
 }
 
 template <typename T>
@@ -212,10 +223,15 @@ __CALLBACK_SAFE__ void LwsService<T>::reserve_quit(LwsService<T>* service) {
 
 template <typename T>
 int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session, void* in, size_t len) {
+	if (!wsi) return 0;
+	ctx* context = lws_get_context(wsi);
+	if (!context) return 0;
+	LwsService<T>* instance = static_cast<LwsService<T>*>(lws_context_user(context));
+	if (!instance) return 0;
+
 	Session* ses = static_cast<Session*>(session);
 	SessionEvHandler<T>* handler;
 	NS_EV event = NS_EV::NONE;
-	LwsService<T>* instance = static_cast<LwsService<T>*>(lws_context_user(lws_get_context(wsi)));
 
 	int in_offset = 0;
 
@@ -223,17 +239,22 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 		case LWS_CALLBACK_PROTOCOL_INIT:
 		{
 			instance->log(_L_YELLOW "Quit timer is reserved.");
-			instance->tlist_wrapper.tsi = lws_get_tsi(wsi);
-			reserve_quit(instance);
+			int tsi = lws_get_tsi(wsi);
+			if (tsi == 0) {
+				instance->tlist_wrapper.tsi = tsi;
+				reserve_quit(instance);
+			}
             break;
 		}
 		case LWS_CALLBACK_RAW_ADOPT:
 		case LWS_CALLBACK_ESTABLISHED:
 		{
+			instance->log("acc");
 			event = NS_EV::ACPT;
 
 			std::string ip = instance->get_ip(wsi);
 			int current_conn = 0;
+			instance->log("get ip");
 			instance->ip_conn_map.get(ip, current_conn);
 			instance->log(_L_BLUE "[%14p] Network connection detected at %s.", (void*)ses, ip.c_str());
 
@@ -375,6 +396,7 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 		}
 		case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
 		{
+
 			instance->fl_resv = false;
 			std::map<Session*, std::string> dels;
 

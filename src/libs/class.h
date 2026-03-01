@@ -1,6 +1,8 @@
 #ifndef __CLASS_H__
 #define __CLASS_H__
 
+#include <algorithm>
+
 #include "../dynamic_compile/dynamic_compile.h"
 __DEF_SEQ_TARGET__
 
@@ -27,5 +29,15 @@ __DEF_SEQ_TARGET__
 #define func_public				public
 #define func_protected			protected
 #define func_private			private
+
+__DEF_SEQ_TARGET_END__
+
+#define USING_TYPENAME(type, ...)	using type = typename __VA_ARGS__::type;
+
+template<size_t N>
+struct FixedString {
+    char value[N];
+    constexpr FixedString(const char (&str)[N]) { std::copy_n(str, N, value); }
+};
 
 #endif

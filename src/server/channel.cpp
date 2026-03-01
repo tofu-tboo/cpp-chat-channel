@@ -11,7 +11,6 @@ bool Channel::init() {
 	if (!super::init()) {
 		return false;
 	}
-	task_runner.popb(TS_POLL);
 	return true;
 }
 

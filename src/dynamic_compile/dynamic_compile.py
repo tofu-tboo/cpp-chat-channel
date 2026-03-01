@@ -151,8 +151,12 @@ def apply_define_seq_linter(keyword, project_files, color):
     """
     1. Find files marked with the keyword.
     2. Extract all #define macros from those files in order.
-    3. Scan all project files to check if the macros are used in the correct sequence.
+    3. Scan all project files to check if the macros are used in the correct sequence within each top-level class.
     """
+    if keyword.endswith("_END__"):
+        return
+
+    end_keyword = keyword[:-2] + "_END__"
     lint_macros = []
     definition_files = set()
     
@@ -165,10 +169,13 @@ def apply_define_seq_linter(keyword, project_files, color):
             if keyword in content:
                 print(f"{color}[{keyword}]{C_RESET} Found in: {filepath}. Extracting macros.")
                 definition_files.add(filepath)
-                # Simple regex to find all #define identifiers
-                found_macros = re.findall(r'#define\s+(\w+)', content)
-                if found_macros:
-                    lint_macros.extend(found_macros)
+                
+                pattern = re.compile(re.escape(keyword) + r'(.*?)' + re.escape(end_keyword), re.DOTALL)
+                match = pattern.search(content)
+                if match:
+                    found_macros = re.findall(r'#define\s+(\w+)', match.group(1))
+                    if found_macros:
+                        lint_macros.extend(found_macros)
         except Exception as e:
             print(f"{C_YELLOW}[ERROR]{C_RESET} scanning {filepath} for linting macros: {e}")
             sys.exit(1)
@@ -182,6 +189,8 @@ def apply_define_seq_linter(keyword, project_files, color):
 
     print(f"{color}[{keyword}]{C_RESET} Macros to lint for sequence: {lint_macros}")
     macro_order = {macro: i for i, macro in enumerate(lint_macros)}
+    lint_macros_re = re.compile(r'\b(' + '|'.join(re.escape(m) for m in lint_macros) + r')\b')
+    class_start_re = re.compile(r'^\s*(template\s*<[^>]*>\s*)?(class|struct)\s+')
 
     # Step 3: Scan all project files and check the order
     for filepath in project_files:
@@ -192,22 +201,34 @@ def apply_define_seq_linter(keyword, project_files, color):
             with open(filepath, 'r', encoding='utf-8') as f:
                 content = f.read()
             
-            # Find all occurrences of the linted macros in the current file
-            # We use word boundaries (\b) to avoid matching parts of other words
-            found_in_file = re.findall(r'\b(' + '|'.join(re.escape(m) for m in lint_macros) + r')\b', content)
-            
-            if not found_in_file:
-                continue
+            # Pre-process content to remove comments and simplify parsing
+            clean_content = re.sub(r'//.*', '', content)
+            clean_content = re.sub(r'/\*.*?\*/', '', clean_content, flags=re.DOTALL)
 
-            # Check if the sequence is correct
-            last_idx = -1
-            for macro in found_in_file:
-                current_idx = macro_order.get(macro, -1)
-                if current_idx < last_idx:
-                    print(f"  {C_YELLOW}[LINT ERROR]{C_RESET} in {filepath}: Macro '{macro}' appears out of order.")
-                    # You could make this an error that stops the build if needed
-                    sys.exit(1)
-                last_idx = current_idx
+            nesting_level = 0
+            last_macro_idx = -1
+            
+            lines = clean_content.splitlines()
+            for i, line in enumerate(lines):
+                # Check for class/struct start at top level *before* processing the line
+                if nesting_level == 0 and class_start_re.match(line):
+                    # New top-level class/struct found, reset the linter state
+                    last_macro_idx = -1
+                
+                # Find macros on the current line
+                found_macros = lint_macros_re.findall(line)
+                for macro in found_macros:
+                    current_idx = macro_order.get(macro, -1)
+                    if current_idx < last_macro_idx:
+                        print(f"  {C_YELLOW}[LINT ERROR]{C_RESET} in {filepath} on line {i+1}: Macro '{macro}' appears out of order.")
+                        sys.exit(1)
+                    last_macro_idx = current_idx
+                
+                # Update nesting level based on braces *after* processing the line
+                nesting_level += line.count('{')
+                nesting_level -= line.count('}')
+                if nesting_level < 0:
+                    nesting_level = 0
         except Exception as e:
             print(f"{C_YELLOW}[ERROR]{C_RESET} linting {filepath}: {e}")
             sys.exit(1)
@@ -331,13 +352,48 @@ def apply_expose_template_mem(keyword, project_files, color):
             if not inheritance_match: continue
             
             inheritance_str = inheritance_match.group(1)
-            # Extract the first parent (assuming single inheritance or the first one is the target template parent)
-            # Matches: public|protected|private Parent<T>
-            parent_match = re.search(r'(?:public|protected|private)\s+([\w<>:,\s]+)', inheritance_str)
-            if not parent_match: continue
             
-            full_parent_name = parent_match.group(1).strip().split(',')[0].strip() # Handle multiple inheritance
-            parent_base_name = re.match(r'(\w+)', full_parent_name).group(1)
+            # Clean comments
+            inheritance_str = re.sub(r'//.*', '', inheritance_str)
+            inheritance_str = re.sub(r'/\*.*?\*/', '', inheritance_str, flags=re.DOTALL)
+
+            # Parse inheritance string to handle templates with commas correctly
+            inheritance_str = inheritance_str.strip()
+            parents = []
+            current_parent = []
+            angle_level = 0
+            for char in inheritance_str:
+                if char == '<':
+                    angle_level += 1
+                elif char == '>':
+                    angle_level -= 1
+                
+                if char == ',' and angle_level == 0:
+                    parents.append("".join(current_parent).strip())
+                    current_parent = []
+                else:
+                    current_parent.append(char)
+            if current_parent:
+                parents.append("".join(current_parent).strip())
+            
+            if not parents: continue
+
+            full_parent_name = parents[0]
+            
+            # Remove access specifiers and 'virtual'
+            while True:
+                prev = full_parent_name
+                full_parent_name = re.sub(r'^\s*(public|protected|private|virtual)\s+', '', full_parent_name)
+                if prev == full_parent_name:
+                    break
+            
+            full_parent_name = full_parent_name.strip()
+            
+            base_name_match = re.match(r'([\w:]+)', full_parent_name)
+            if not base_name_match: continue
+            parent_base_name = base_name_match.group(1)
+            if '::' in parent_base_name:
+                parent_base_name = parent_base_name.split('::')[-1]
             
             print(f"{color}[{keyword}]{C_RESET} Processing {child_class_name} in {filepath}")
 

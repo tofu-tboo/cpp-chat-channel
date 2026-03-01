@@ -42,7 +42,6 @@ int main(int argc, char* argv[]) {
 	printf("LWS Version: %s\n", lws_get_library_version());
 
     g_server->proc();
-
     g_server = nullptr;
 
     return 0;

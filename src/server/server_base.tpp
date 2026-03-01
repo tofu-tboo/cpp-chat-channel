@@ -18,17 +18,12 @@ ServerBase<U>::ServerBase(std::shared_ptr<NetworkService<U>> di_service, std::un
 template <typename U>
 bool ServerBase<U>::init() {
 	if (service) {
-		service->setup(this);
 
 		task_runner.new_session(TS_COUNT);
 		// Cleanup Qs
         task_runner.pushb(TS_PRE, [this]() {
 			std::unique_lock<std::shared_mutex> lock(nd_mtx);
 			nxt_close.clear();
-        });
-		// Polling
-        task_runner.pushb(TS_POLL, [this]() {
-			service->serve();
         });
 		// Deletion fds
         task_runner.pushb(TS_LOGIC, [this]() {
@@ -45,21 +40,25 @@ ServerBase<U>::~ServerBase() {}
 
 template <typename U>
 void ServerBase<U>::proc() {
-    while (is_running) {
-        try {
-#ifdef DEBUG
-            auto start = std::chrono::high_resolution_clock::now();
-#endif
-            task_runner.run();
-#ifdef DEBUG
-            auto end = std::chrono::high_resolution_clock::now();
-            auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-            if (dur > 50) log(_L_YELLOW "[Perf] Loop took %lld ms", (long long)dur);
-#endif
-        } catch(const std::exception& e) {
-			elog("Exception in task runner: %s", e.what());
-        }
-    }
+   	service->setup(this, [this]() {
+		while (is_running) {
+			try {
+				service->serve();
+	#ifdef DEBUG
+				auto start = std::chrono::high_resolution_clock::now();
+	#endif
+				task_runner.run();
+	#ifdef DEBUG
+				auto end = std::chrono::high_resolution_clock::now();
+				auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+				if (dur > 50) log(_L_YELLOW "[Perf] Loop took %lld ms", (long long)dur);
+	#endif
+			} catch(const std::exception& e) {
+				elog("Exception in task runner: %s", e.what());
+			}
+		}
+	});
+	service->threads_join();
 }
 
 template <typename U>

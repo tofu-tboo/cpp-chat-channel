@@ -10,6 +10,8 @@
 
 #include <libwebsockets.h>
 #include <string>
+#include <vector>
+#include <thread>
 #include "network_service.h"
 #include "set_super.h"
 #include "../dynamic_compile/dynamic_compile.h"
@@ -26,7 +28,7 @@ template <typename T>
 class LwsService: public NetworkService<T>, virtual public Loggable {
 	SET_SUPER(NetworkService<T>);
 	type_protected:
-		USING_SESSION_TYPENAME(T);
+		USING_TYPENAME(Session, NetworkService<T>);
 
 		__USING_SUPER_MEM__
 		using NetworkService<T>::SessionSecret;
@@ -43,6 +45,8 @@ class LwsService: public NetworkService<T>, virtual public Loggable {
 		using NetworkService<T>::send;
 		using NetworkService<T>::send_resv;
 		using NetworkService<T>::session_group;
+		using NetworkService<T>::thread_pool;
+		using NetworkService<T>::threads_join;
 
 		struct LwsSession {
 			msec64 last_act;
@@ -56,6 +60,8 @@ class LwsService: public NetworkService<T>, virtual public Loggable {
 			LwsService<T>* service;
 			int tsi;
 		};
+	static_var_public:
+		static thread_local int tsi;
 	static_var_private:
 		static protocols_t protocols[];
 	static_func_private:
@@ -70,10 +76,10 @@ class LwsService: public NetworkService<T>, virtual public Loggable {
 
 		SulWrapper tlist_wrapper;
 	func_public:
-		LwsService(const int port, const int tcnt = 1);
+		LwsService(const port_t port, const size_t tcnt = 1);
 		~LwsService();
 
-		virtual void setup(SessionEvHandler<T>* i_handler) override final;
+		virtual void setup(SessionEvHandler<T>* i_handler, const std::function<void()>& task) override final;
 
 		virtual void serve() override final;
 
@@ -93,6 +99,36 @@ class LwsService: public NetworkService<T>, virtual public Loggable {
 		__CALLBACK_SAFE__ std::string get_ip(lws* wsi);
 };
 
+template <typename T>
+class ThreadPool<T, "lws">: public IThreadPool<T> {
+	type_protected:
+		using IThreadPool<T>::size;
+	var_private:
+		std::vector<std::thread> threads;
+	func_public:
+		ThreadPool(const size_t s): IThreadPool<T>(s) {}
+
+		virtual void start(const std::function<void()>& task) override final {
+			for (size_t i = 0; i < size; i++) {
+				threads.emplace_back([i, task]() {
+					LwsService<T>::tsi = (int)i;
+					task();
+				});
+			}
+		}
+		virtual void stop() override final {
+			// for (auto& thread : threads) {
+			// 	if (thread.joinable())
+			// 		thread.join();
+			// }
+		}
+		virtual void join() override final {
+			for (auto& thread : threads) {
+				if (thread.joinable())
+					thread.join();
+			}
+		}
+};
 
 #include "lws_service.tpp"
 

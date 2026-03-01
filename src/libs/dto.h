@@ -31,7 +31,7 @@ typedef union {
 	// etc...
 } UReportDto;
 
-typedef struct {
+struct User{
 	uint64_t uid;
 	msec64 join_t;
 	char* name;
@@ -42,6 +42,6 @@ typedef struct {
 			name = nullptr;
 		}
 	}
-} User;
+};
 
 #endif

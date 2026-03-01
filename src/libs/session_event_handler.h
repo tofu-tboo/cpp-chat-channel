@@ -12,17 +12,20 @@ typedef struct {
 
 template <typename T>
 class SessionEvHandler: virtual public Loggable {
+	type_protected:
+		USING_TYPENAME(Session, NetworkService<T>);
+		USING_TYPENAME(CallbackParam, NetworkService<T>);
 	func_public:
-		int callback(const typename NetworkService<T>::CallbackParam&);
+		int callback(const CallbackParam&);
 	func_protected:
 		SessionEvHandler();
 
-		virtual void on_accept(typename NetworkService<T>::Session&) = 0;
-		virtual void on_recv(typename NetworkService<T>::Session&, const RecvStream&) = 0;
-		virtual void on_send(typename NetworkService<T>::Session&) = 0;
-		virtual void on_close(typename NetworkService<T>::Session&) = 0;
-		virtual void on_rate_limit_packet_drop(typename NetworkService<T>::Session&) = 0;
-		virtual void pre_event(const typename NetworkService<T>::CallbackParam&);
+		virtual void on_accept(Session&) = 0;
+		virtual void on_recv(Session&, const RecvStream&) = 0;
+		virtual void on_send(Session&) = 0;
+		virtual void on_close(Session&) = 0;
+		virtual void on_rate_limit_packet_drop(Session&) = 0;
+		virtual void pre_event(const CallbackParam&);
 };
 
 #include "session_event_handler.tpp"

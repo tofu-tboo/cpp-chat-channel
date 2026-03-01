@@ -3,23 +3,19 @@
 #include "exception.h"
 
 template <typename T>
-NetworkService<T>::NetworkService(): Loggable("NetworkService", _L_GREEN, this), thread_cnt(1) {}
+NetworkService<T>::NetworkService(): Loggable("NetworkService", _L_GREEN, this) {}
 
 template <typename T>
-NetworkService<T>::NetworkService(const int tcnt): Loggable("NetworkService", _L_GREEN, this) {
-	if (tcnt > MAX_THREAD)
-		thread_cnt = MAX_THREAD;
-	else if (tcnt < 1)
-		thread_cnt = 1;
+NetworkService<T>::~NetworkService() {
+	if (thread_pool)
+		delete thread_pool;
 }
-
-template <typename T>
-NetworkService<T>::~NetworkService() {}
 
 #pragma region PUBLIC_FUNC
 template <typename T>
-void NetworkService<T>::setup(SessionEvHandler<T>* i_handler) {
+void NetworkService<T>::setup(SessionEvHandler<T>* i_handler, const std::function<void()>& task) {
 	handler = i_handler;
+	thread_pool->start(task);
 }
 
 template <typename T>
@@ -40,6 +36,11 @@ void NetworkService<T>::broadcast_group(int group, const std::string& msg) {
 template <typename T>
 void NetworkService<T>::close(Session* ses, const std::string& msg) {
 	close(ses, reinterpret_cast<const unsigned char*>(msg.c_str()), msg.size());
+}
+
+template <typename T>
+void NetworkService<T>::threads_join() {
+	thread_pool->join();
 }
 
 template <typename T>

@@ -4,8 +4,6 @@
 #define MAX_FRAME_SIZE			(2048)
 #define MAX_THREAD				(8)
 
-#define USING_SESSION_TYPENAME(T)	using Session = typename NetworkService<T>::Session
-
 // Define protocol num
 #define PROT_NONE	(-1)
 #define TCP			(0)
@@ -25,6 +23,7 @@
 #include <vector>
 #include <unordered_map>
 #include <climits>
+#include <functional>
 
 #include "dto.h"
 #include "loggable.h"
@@ -33,11 +32,18 @@
 #include "class.h"
 
 typedef short protocol_id;
+typedef unsigned short port_t;
 
 enum NS_EV { NONE, ACPT, RECV, SEND, CLOSE, RL_DROP };
 
 template <typename T>
 class SessionEvHandler;
+
+template <typename T>
+class IThreadPool;
+
+template <typename T, FixedString Str>
+class ThreadPool;
 
 // NetworkService allows the packets to be limited as certain size.
 template <typename T>
@@ -85,13 +91,12 @@ class NetworkService: virtual public Loggable {
 
 		SessionEvHandler<T>* handler; // initial client-handler
 
-		int thread_cnt;
+		IThreadPool<T>* thread_pool;
 	func_public:
 		NetworkService();
-		NetworkService(const int tcnt);
 		~NetworkService();
 
-		virtual void setup(SessionEvHandler<T>* i_handler);
+		virtual void setup(SessionEvHandler<T>* i_handler, const std::function<void()>& task);
 
 		virtual void serve() = 0;
 
@@ -108,12 +113,36 @@ class NetworkService: virtual public Loggable {
 
 		virtual void close(Session* ses, const std::string& msg);
 		virtual void close(Session* ses, const unsigned char* data, size_t len) = 0;
+
+		virtual void threads_join();
 	func_protected:
 		virtual void accumulate(Session* ses, const unsigned char* data, size_t len) = 0;
 
 		// for C-style libraries
 		void construct_session(Session* ses);
 		void destruct_session(Session* ses);
+};
+
+template <typename T>
+class IThreadPool {
+	var_protected:
+		size_t size;
+	func_public:
+		IThreadPool(const size_t s) {
+			if (s > MAX_THREAD)
+				size = MAX_THREAD;
+			else
+				size = s;
+		};
+		~IThreadPool() = default;
+
+		virtual void start(const std::function<void()>& task) = 0;
+		virtual void stop() = 0;
+		virtual void join() = 0;
+		
+		size_t get_size() const {
+			return size;
+		};
 };
 
 #include "network_service.tpp"

@@ -47,7 +47,7 @@ class IMsgTranslator;
 template <typename U>
 class ServerBase: public SessionEvHandler<U>, virtual public Loggable {
     type_protected:
-		USING_SESSION_TYPENAME(U);
+		USING_TYPENAME(Session, SessionEvHandler<U>);
 
 		enum TaskSession {
             TS_PRE = 0,   	// 전처리: 큐 소비, 버퍼 정리
