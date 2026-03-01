@@ -34,7 +34,7 @@ int main(int argc, char* argv[]) {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
-	auto service = std::make_shared<LwsService<User>>(port);
+	auto service = std::make_shared<LwsService<User>>(port, 8);
 	g_server = ServerFactory::create<User, ChatServer>(std::move(service), lobby_max_fd);
 
     g_server->proc();

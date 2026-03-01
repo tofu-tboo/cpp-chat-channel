@@ -36,7 +36,7 @@ int main(int argc, char* argv[]) {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
-	auto service = std::make_shared<LwsService<User>>(port);
+	auto service = std::make_shared<LwsService<User>>(port, 8);
 	auto factory = std::make_unique<ChannelFactory>(service, ch_max_fd);
 	g_server = ServerFactory::create<User, ChannelServer>(service, lobby_max_fd, std::move(factory));
 	printf("LWS Version: %s\n", lws_get_library_version());

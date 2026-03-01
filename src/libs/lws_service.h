@@ -50,19 +50,27 @@ class LwsService: public NetworkService<T>, virtual public Loggable {
 			lws* wsi;
 			LwsSession(): last_act(0), to_flag(TO_EV_NONE), wsi(nullptr) {}
 		};
+
+		struct SulWrapper {
+			utimer_list_t sul;
+			LwsService<T>* service;
+			int tsi;
+		};
 	static_var_private:
 		static protocols_t protocols[];
 	static_func_private:
 		static int lws_callback(lws* wsi, callback_reason reason, void* session, void* in, size_t len);
+		__CALLBACK_SAFE__ static void quit_service(utimer_list_t* sul);
+		__CALLBACK_SAFE__ static void reserve_quit(LwsService<T>* service);
 	var_private:
 		ctx* context;
 		ctx_creation_info info;
 
 		bool fl_resv;
 
-		utimer_list_t tlist;
+		SulWrapper tlist_wrapper;
 	func_public:
-		LwsService(const int port);
+		LwsService(const int port, const int tcnt = 1);
 		~LwsService();
 
 		virtual void setup(SessionEvHandler<T>* i_handler) override final;

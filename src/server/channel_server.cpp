@@ -20,7 +20,6 @@ bool ChannelServer::init() {
 		// Periodically process switch requests from channels
 		task_runner.pushf(TS_LOGIC, AsThrottle([this]() {
 			check_lobby();
-			check_channels();
 		}, 1000));
 		task_runner.pushb(TS_LOGIC, [this]() {
 			for (auto& [_, channel] : channels) {
@@ -159,23 +158,5 @@ void ChannelServer::check_lobby() {
 	}
 
 	last_act = std::move(next);
-}
-
-void ChannelServer::check_channels() {
-	msec64 now = now_ms();
-	std::unique_lock<std::shared_mutex> lock(chs_mtx);
-	for (auto it = channels.begin(); it != channels.end(); ) {
-		Channel* ch = it->second;
-		if (ch->get_empty_since() > 0) {
-			msec64 empty_time = ch->get_empty_since();
-			if (empty_time > 0 && (now - empty_time) > 300000) { // 5 minutes
-				log(_L_CYAN "Channel %u" _L_DEFAULT " destroyed due to inactivity.", it->first);
-				delete ch;
-				it = channels.erase(it);
-				continue;
-			}
-		}
-		++it;
-	}
 }
 #pragma endregion

@@ -3,6 +3,7 @@
 #include "../libs/times.h"
 #include "../libs/exception.h"
 #include "../libs/network_service.h"
+#include <chrono>
 
 template <typename U>
 ServerBase<U>::ServerBase(std::shared_ptr<NetworkService<U>> di_service, std::unique_ptr<IMsgTranslator> processor, const int max): service(std::move(di_service)), msg_translator(std::move(processor)), max_conn(max), cur_conn(0), is_running(true), Loggable("ServerBase", _L_BLUE, this) {
@@ -46,7 +47,15 @@ template <typename U>
 void ServerBase<U>::proc() {
     while (is_running) {
         try {
+#ifdef DEBUG
+            auto start = std::chrono::high_resolution_clock::now();
+#endif
             task_runner.run();
+#ifdef DEBUG
+            auto end = std::chrono::high_resolution_clock::now();
+            auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+            if (dur > 50) log(_L_YELLOW "[Perf] Loop took %lld ms", (long long)dur);
+#endif
         } catch(const std::exception& e) {
 			elog("Exception in task runner: %s", e.what());
         }

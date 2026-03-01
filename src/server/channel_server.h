@@ -48,7 +48,6 @@ class ChannelServer: public ServerBase<User> {
 		Channel* get_channel(const ch_id_t channel_id);
         Channel* find_or_create_channel(ch_id_t preferred_id);
 		void check_lobby();
-		void check_channels();
 };
 
 

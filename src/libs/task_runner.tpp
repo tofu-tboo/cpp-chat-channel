@@ -1,4 +1,6 @@
 #include "task_runner.h"
+#include "util.h"
+#include <chrono>
 
 template <typename Fn>
 template <typename Op>
@@ -51,9 +53,18 @@ void TaskRunner<Fn>::clear() {
 template <typename Fn>
 void TaskRunner<Fn>::run() {
     std::lock_guard<std::mutex> lock(mtx);
-    for (auto& session : tasks) {
+    for (size_t i = 0; i < tasks.size(); ++i) {
+        auto& session = tasks[i];
         for (auto it = session.begin(); it != session.end();) {
+#ifdef DEBUG
+            auto start = std::chrono::high_resolution_clock::now();
+#endif
             it->func();
+#ifdef DEBUG
+            auto end = std::chrono::high_resolution_clock::now();
+            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+            if (dur > 1000) DLOG(_CY_ "[TaskRunner] Session %d task took %lld us" _EC_, (int)i, (long long)dur);
+#endif
             it = it->once ? session.erase(it) : std::next(it);
         }
     }

@@ -2,6 +2,7 @@
 #define __SOCKET_EVENTER_H__
 
 #define MAX_FRAME_SIZE			(2048)
+#define MAX_THREAD				(8)
 
 #define USING_SESSION_TYPENAME(T)	using Session = typename NetworkService<T>::Session
 
@@ -83,8 +84,11 @@ class NetworkService: virtual public Loggable {
 		AutoLockContainer<std::unordered_map<std::string, int>> ip_conn_map;
 
 		SessionEvHandler<T>* handler; // initial client-handler
+
+		int thread_cnt;
 	func_public:
 		NetworkService();
+		NetworkService(const int tcnt);
 		~NetworkService();
 
 		virtual void setup(SessionEvHandler<T>* i_handler);

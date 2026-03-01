@@ -3,7 +3,15 @@
 #include "exception.h"
 
 template <typename T>
-NetworkService<T>::NetworkService(): Loggable("NetworkService", _L_GREEN, this) {}
+NetworkService<T>::NetworkService(): Loggable("NetworkService", _L_GREEN, this), thread_cnt(1) {}
+
+template <typename T>
+NetworkService<T>::NetworkService(const int tcnt): Loggable("NetworkService", _L_GREEN, this) {
+	if (tcnt > MAX_THREAD)
+		thread_cnt = MAX_THREAD;
+	else if (tcnt < 1)
+		thread_cnt = 1;
+}
 
 template <typename T>
 NetworkService<T>::~NetworkService() {}

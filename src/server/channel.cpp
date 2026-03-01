@@ -82,7 +82,6 @@ bool Channel::ping_pool() {
 }
 
 msec64 Channel::get_empty_since() const { return empty_since; }
-// bool Channel::is_stopped() const { return stop_flag.load(); }
 
 #pragma region PROTECTED_FUNC
 
@@ -166,9 +165,6 @@ void Channel::free_user(Session& ses) {
 	std::unique_lock<std::shared_mutex> lock(mq_mtx);
 	mq.push({&ses, msg});
 	lock.unlock();
-
-	if (user->name) free(user->name);
-	user->name = nullptr;
 }
 
 #pragma endregion

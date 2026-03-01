@@ -22,15 +22,20 @@ protocols_t LwsService<T>::protocols[] = {
 };
 
 template <typename T>
-LwsService<T>::LwsService(const int port): context(nullptr), fl_resv(false), Loggable("LwsService", _L_GREEN, this) {
+LwsService<T>::LwsService(const int port, const int tcnt): super(tcnt) context(nullptr), fl_resv(false), Loggable("LwsService", _L_GREEN, this) {
+	// Set context info
 	memset(&info, 0, sizeof(info));
 	info.port = port;
 	info.protocols = LwsService<T>::protocols;
 	info.options = LWS_SERVER_OPTION_FALLBACK_TO_RAW | LWS_SERVER_OPTION_DISABLE_OS_CA_CERTS; // TCP & WS compatibility
 	info.timeout_secs = 15; // WS handshake timeout
 	// info.fd_limit_per_thread = int;
-	info.count_threads = 8; // TODO
+	info.count_threads = thread_cnt;
 	info.user = this;
+
+	// Set sul wrapper
+	tlist_wrapper.service = this;
+	memset(&tlist_wrapper.sul, 0, sizeof(utimer_list_t));
 }
 
 template <typename T>
@@ -40,7 +45,7 @@ LwsService<T>::~LwsService() {
 		context = nullptr;
 	}
 
-	lws_sul_cancel(&tlist); // stack safe
+	lws_sul_cancel(&tlist_wrapper.sul); // stack safe
 }
 
 #pragma region PUBLIC_FUNC
@@ -55,7 +60,6 @@ void LwsService<T>::setup(SessionEvHandler<T>* i_handler) {
 
 template <typename T>
 void LwsService<T>::serve() {
-	log(_L_WHITE "Serve()------------");
 	lws_service(context, 0);
 }
 
@@ -192,6 +196,21 @@ __CALLBACK_SAFE__ std::string LwsService<T>::get_ip(lws* wsi) {
 }
 
 template <typename T>
+__CALLBACK_SAFE__ void LwsService<T>::quit_service(utimer_list_t* sul) {
+	SulWrapper* wrapper = lws_container_of(sul, SulWrapper, sul);
+	LwsService<T>* service = wrapper->service;
+
+	service->flush();
+
+	reserve_quit(service);
+}
+
+template <typename T>
+__CALLBACK_SAFE__ void LwsService<T>::reserve_quit(LwsService<T>* service) {
+	lws_sul_schedule(service->context, service->tlist_wrapper.tsi, &service->tlist_wrapper.sul, quit_service, 500 * M2U);
+}
+
+template <typename T>
 int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session, void* in, size_t len) {
 	Session* ses = static_cast<Session*>(session);
 	SessionEvHandler<T>* handler;
@@ -203,7 +222,9 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 	switch (reason) {
 		case LWS_CALLBACK_PROTOCOL_INIT:
 		{
-			// lws_sul_schedule(instance->context, lws_get_tsi(wsi), &instance->tlist, /* 함수 */, 500 * M2U); // TODO: tlist를 멤버로 하는 구조체 관리와 task 등록 구현
+			instance->log(_L_YELLOW "Quit timer is reserved.");
+			instance->tlist_wrapper.tsi = lws_get_tsi(wsi);
+			reserve_quit(instance);
             break;
 		}
 		case LWS_CALLBACK_RAW_ADOPT:
@@ -355,7 +376,6 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 		case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
 		{
 			instance->fl_resv = false;
-			instance->log(_L_YELLOW "Start side action.");
 			std::map<Session*, std::string> dels;
 
 			dels = instance->del_resv.move();

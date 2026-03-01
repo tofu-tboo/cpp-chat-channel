@@ -37,7 +37,6 @@ class Channel: public ChatServer {
 		bool ping_pool();
 
 		msec64 get_empty_since() const;
-		bool is_stopped() const;
 
     func_protected: // Sequencially called in proc() => no needed mutex
 

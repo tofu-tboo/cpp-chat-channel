@@ -6,7 +6,7 @@ CXX_WIN = x86_64-w64-mingw32-g++
 
 .PHONY: all client server clean libs debug
 
-debug: CXXFLAGS = -g -DDEBUG
+debug: CXXFLAGS += -DDEBUG
 debug: all
 
 all: $(OUT_DIR) libs client server

@@ -34,7 +34,14 @@ typedef union {
 typedef struct {
 	uint64_t uid;
 	msec64 join_t;
-	char* name; // needed to free
+	char* name;
+	User(): name(nullptr) {}
+	~User() {
+		if (name) {
+			delete name;
+			name = nullptr;
+		}
+	}
 } User;
 
 #endif

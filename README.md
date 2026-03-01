@@ -143,5 +143,6 @@
 1. JWT 검증
 2. XSS 방지
 3. .h, .cpp 의존성 분리
-4. logger
-5. black list
+4. black list
+5. multi-threading => create thread to run concurrently => introduce public sul_schedule task wrapper
+6. Channel control for multi-threading
