@@ -13,9 +13,23 @@ NetworkService<T>::~NetworkService() {
 
 #pragma region PUBLIC_FUNC
 template <typename T>
-void NetworkService<T>::setup(SessionEvHandler<T>* i_handler, const std::function<void()>& task) {
+void NetworkService<T>::setup(SessionEvHandler<T>* i_handler) {
 	handler = i_handler;
-	thread_pool->start(task);
+}
+
+template <typename T>
+void NetworkService<T>::start() {
+	if (thread_pool) thread_pool->start();
+}
+
+template <typename T>
+void NetworkService<T>::stop() {
+	if (thread_pool) thread_pool->stop();
+}
+
+template <typename T>
+bool NetworkService<T>::is_running() const {
+	return thread_pool ? thread_pool->is_running() : false;
 }
 
 template <typename T>
@@ -39,8 +53,8 @@ void NetworkService<T>::close(Session* ses, const std::string& msg) {
 }
 
 template <typename T>
-void NetworkService<T>::threads_join() {
-	thread_pool->join();
+void NetworkService<T>::join() {
+	if (thread_pool) thread_pool->join();
 }
 
 template <typename T>

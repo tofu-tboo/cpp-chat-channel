@@ -241,6 +241,20 @@ def find_class_members(class_name, files_to_search, all_class_dot_h_macros):
     """
     members = {}
     
+    cpp_keywords = {
+        'alignas', 'alignof', 'and', 'and_eq', 'asm', 'atomic_cancel', 'atomic_commit', 'atomic_noexcept', 
+        'auto', 'bitand', 'bitor', 'bool', 'break', 'case', 'catch', 'char', 'char8_t', 'char16_t', 'char32_t', 
+        'class', 'compl', 'concept', 'const', 'consteval', 'constexpr', 'constinit', 'const_cast', 'continue', 
+        'co_await', 'co_return', 'co_yield', 'decltype', 'default', 'delete', 'do', 'double', 'dynamic_cast', 
+        'else', 'enum', 'explicit', 'export', 'extern', 'false', 'float', 'for', 'friend', 'goto', 'if', 'inline', 
+        'int', 'long', 'mutable', 'namespace', 'new', 'noexcept', 'not', 'not_eq', 'nullptr', 'operator', 'or', 
+        'or_eq', 'private', 'protected', 'public', 'reflexpr', 'register', 'reinterpret_cast', 'requires', 
+        'return', 'short', 'signed', 'sizeof', 'static', 'static_assert', 'static_cast', 'struct', 'switch', 
+        'synchronized', 'template', 'this', 'thread_local', 'throw', 'true', 'try', 'typedef', 'typeid', 
+        'typename', 'union', 'unsigned', 'using', 'virtual', 'void', 'volatile', 'wchar_t', 'while', 'xor', 
+        'xor_eq', 'override', 'final'
+    }
+    
     private_specifiers = {'private:'}
     public_protected_specifiers = {'public:', 'protected:'}
     for macro in all_class_dot_h_macros:
@@ -273,38 +287,53 @@ def find_class_members(class_name, files_to_search, all_class_dot_h_macros):
 
             lines = class_body.splitlines()
             i = 0
+            local_brace_depth = 0
+
             while i < len(lines):
                 line = lines[i].strip()
                 i += 1
                 if not line: continue
 
+                open_braces = line.count('{')
+                close_braces = line.count('}')
+
+                if local_brace_depth > 0:
+                    local_brace_depth += open_braces - close_braces
+                    continue
+
                 if any(line == spec for spec in private_specifiers):
                     current_access = 'private'
+                    local_brace_depth += open_braces - close_braces
                     continue
                 if any(line == spec for spec in public_protected_specifiers):
                     current_access = 'public'
+                    local_brace_depth += open_braces - close_braces
                     continue
 
-                if current_access == 'private': continue
-
-                # Skip nested struct/class definitions to avoid parsing their members
-                if (line.startswith('struct ') or line.startswith('class ')) and '{' in line:
-                    brace_count = line.count('{') - line.count('}')
-                    while i < len(lines) and brace_count > 0:
-                        brace_count += lines[i].count('{') - lines[i].count('}')
-                        i += 1
+                if current_access == 'private': 
+                    local_brace_depth += open_braces - close_braces
                     continue
 
-                if line.startswith(('using ', 'typedef ', 'enum ', 'friend ', 'SET_SUPER', '__USING_SUPER_MEM__')): continue
+                if line.startswith(('using ', 'typedef ', 'enum ', 'friend ', 'SET_SUPER', '__USING_SUPER_MEM__', '#')): 
+                    local_brace_depth += open_braces - close_braces
+                    continue
 
                 terminator_pos = len(line)
                 if '(' in line: terminator_pos = min(terminator_pos, line.find('('))
                 if ';' in line: terminator_pos = min(terminator_pos, line.find(';'))
                 if '=' in line and '<' not in line[:line.find('=')]:
                     terminator_pos = min(terminator_pos, line.find('='))
+                if '{' in line: terminator_pos = min(terminator_pos, line.find('{'))
 
                 declaration_part = line[:terminator_pos].strip()
+                
+                local_brace_depth += open_braces - close_braces
+
                 if not declaration_part: continue
+
+                # Skip nested class/struct definitions
+                if re.match(r'^\s*(template\s*<[^>]*>\s*)?(class|struct)\s+\w+(\s*:\s*.*)?$', declaration_part):
+                    continue
 
                 # Extract member name, which is usually the last word before '(', ';', or '='
                 # This is a simplified regex and might not cover all edge cases.
@@ -316,7 +345,7 @@ def find_class_members(class_name, files_to_search, all_class_dot_h_macros):
                 if (member_name and 
                     member_name != class_name and 
                     not member_name.startswith('~') and
-                    not member_name.startswith('operator')):
+                    member_name not in cpp_keywords):
                     members[member_name] = members.get(member_name, 0) + 1
 
             return members
@@ -325,7 +354,7 @@ def find_class_members(class_name, files_to_search, all_class_dot_h_macros):
             continue
     return members
 
-def apply_expose_template_mem(keyword, project_files, color):
+def apply_expose_template_mem(keyword, project_files, color, all_code_files):
     class_h_path = os.path.join(SRC_DIR, "libs", "class.h")
     all_class_dot_h_macros = []
     try:
@@ -342,110 +371,169 @@ def apply_expose_template_mem(keyword, project_files, color):
             
             if keyword not in content: continue
 
-            child_class_match = re.search(r'class\s+(\w+)\s*:', content)
-            if not child_class_match: continue
-            child_class_name = child_class_match.group(1)
-
-            # Find parent class from inheritance declaration
-            # class Child : public Parent<T>, ... {
-            inheritance_match = re.search(r'class\s+' + re.escape(child_class_name) + r'\s*:\s*([^{]+)\{', content)
-            if not inheritance_match: continue
+            original_content = content
             
-            inheritance_str = inheritance_match.group(1)
+            # Find all top-level class/struct definitions
+            class_regions = []
+            class_start_regex = re.compile(r'(template\s*<[^>]*>\s*)?(class|struct)\s+([^:{]+)\s*(:[^\{]*)?\{')
             
-            # Clean comments
-            inheritance_str = re.sub(r'//.*', '', inheritance_str)
-            inheritance_str = re.sub(r'/\*.*?\*/', '', inheritance_str, flags=re.DOTALL)
-
-            # Parse inheritance string to handle templates with commas correctly
-            inheritance_str = inheritance_str.strip()
-            parents = []
-            current_parent = []
-            angle_level = 0
-            for char in inheritance_str:
-                if char == '<':
-                    angle_level += 1
-                elif char == '>':
-                    angle_level -= 1
-                
-                if char == ',' and angle_level == 0:
-                    parents.append("".join(current_parent).strip())
-                    current_parent = []
-                else:
-                    current_parent.append(char)
-            if current_parent:
-                parents.append("".join(current_parent).strip())
-            
-            if not parents: continue
-
-            full_parent_name = parents[0]
-            
-            # Remove access specifiers and 'virtual'
-            while True:
-                prev = full_parent_name
-                full_parent_name = re.sub(r'^\s*(public|protected|private|virtual)\s+', '', full_parent_name)
-                if prev == full_parent_name:
-                    break
-            
-            full_parent_name = full_parent_name.strip()
-            
-            base_name_match = re.match(r'([\w:]+)', full_parent_name)
-            if not base_name_match: continue
-            parent_base_name = base_name_match.group(1)
-            if '::' in parent_base_name:
-                parent_base_name = parent_base_name.split('::')[-1]
-            
-            print(f"{color}[{keyword}]{C_RESET} Processing {child_class_name} in {filepath}")
-
-            all_headers = get_project_files(HEADER_EXTS)
-            parent_members = find_class_members(parent_base_name, all_headers, all_class_dot_h_macros)
-            child_members = find_class_members(child_class_name, [filepath], all_class_dot_h_macros)
-
-            members_to_use = set()
-            for name, p_count in parent_members.items():
-                c_count = child_members.get(name, 0)
-                # 1. If child doesn't have it at all -> use it.
-                # 2. If child has it, but parent has more overloads -> use it to unhide parent's overloads.
-                if c_count == 0 or p_count > c_count:
-                    members_to_use.add(name)
-            
-            if not members_to_use: continue
-
-            keyword_line_match = re.search(r'^(\s*)' + re.escape(keyword), content, re.MULTILINE)
-            indent = keyword_line_match.group(1) if keyword_line_match else "\t"
-
-            # --- New "Block Replacement" Logic ---
-
-            # 1. Define the regex for the block to be replaced.
-            # This matches the keyword, followed by any number of 'using Parent::member;' lines.
-            block_regex = re.compile(
-                re.escape(keyword) + r'((?:\n\s*using\s+' + re.escape(full_parent_name) + r'::\w+;)*)'
-            )
-            
-            # 2. Generate the new, correct block of code.
-            new_block = keyword
-            if members_to_use:
-                using_lines = [f"{indent}using {full_parent_name}::{member};" for member in sorted(list(members_to_use))]
-                new_block += "".join(using_lines) # **절대 이 부분의 포맷을 고치지 말 것**
-
-            # 3. Find the existing block in the content.
-            match = block_regex.search(content)
-            if not match:
-                print(f"  {C_YELLOW}[WARNING]{C_RESET} Could not find a replaceable block for {keyword}. Inserting fresh.")
-                new_content = content.replace(keyword, new_block, 1)
-            else:
-                existing_block = match.group(0)
-                # 4. Compare and replace if necessary.
-                if existing_block.strip() == new_block.strip():
-                    print(f"  -> Declarations are already up-to-date.")
+            for match in class_start_regex.finditer(content):
+                # Heuristic to skip nested classes: check if we are already inside a { } block
+                pre_match_content = content[:match.start()]
+                if pre_match_content.count('{') > pre_match_content.count('}'):
                     continue
-                new_content = content.replace(existing_block, new_block, 1)
-            
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(new_content)
-            
-            print(f"  -> Updated using declarations for {len(members_to_use)} members.")
 
+                class_content_start_pos = match.end()
+                brace_count = 1
+                end_pos = class_content_start_pos
+                
+                while brace_count > 0 and end_pos < len(content):
+                    if content[end_pos] == '{': brace_count += 1
+                    elif content[end_pos] == '}': brace_count -= 1
+                    end_pos += 1
+                
+                class_regions.append({'match': match, 'end': end_pos})
+
+            if not class_regions:
+                continue
+
+            # Cache implementation file contents for this header
+            impl_files_content = {}
+            file_dir = os.path.dirname(filepath)
+            file_basename = os.path.splitext(os.path.basename(filepath))[0]
+            for f_path in all_code_files:
+                if os.path.dirname(f_path) == file_dir and os.path.splitext(os.path.basename(f_path))[0] == file_basename:
+                    try:
+                        with open(f_path, 'r', encoding='utf-8') as f:
+                            impl_files_content[f_path] = f.read()
+                    except Exception:
+                        pass
+
+            # Process regions in reverse to not mess up indices
+            for region in reversed(class_regions):
+                match = region['match']
+                class_start_pos = match.start()
+                class_end_pos = region['end']
+                
+                class_full_text = content[class_start_pos:class_end_pos]
+                
+                if keyword not in class_full_text:
+                    continue
+
+                child_class_name_full = match.group(3).strip()
+                child_class_name_base_match = re.match(r'([\w:]+)', child_class_name_full)
+                if not child_class_name_base_match:
+                    continue
+                child_class_name = child_class_name_base_match.group(1)
+
+                inheritance_str_with_colon = match.group(4)
+                
+                if not inheritance_str_with_colon: continue
+                
+                print(f"{color}[{keyword}]{C_RESET} Processing {child_class_name} in {filepath}")
+
+                inheritance_str = inheritance_str_with_colon[1:]
+                
+                # Clean comments from inheritance string
+                inheritance_str = re.sub(r'//.*', '', inheritance_str)
+                inheritance_str = re.sub(r'/\*.*?\*/', '', inheritance_str, flags=re.DOTALL)
+                inheritance_str = inheritance_str.strip()
+
+                # Parse inheritance string to handle templates with commas correctly
+                parents = []
+                current_parent = []
+                angle_level = 0
+                for char in inheritance_str:
+                    if char == '<': angle_level += 1
+                    elif char == '>': angle_level -= 1
+                    if char == ',' and angle_level == 0:
+                        parents.append("".join(current_parent).strip())
+                        current_parent = []
+                    else:
+                        current_parent.append(char)
+                if current_parent:
+                    parents.append("".join(current_parent).strip())
+                
+                if not parents: continue
+                full_parent_name = parents[0]
+                
+                # Remove access specifiers and 'virtual'
+                while True:
+                    prev = full_parent_name
+                    full_parent_name = re.sub(r'^\s*(public|protected|private|virtual)\s+', '', full_parent_name)
+                    if prev == full_parent_name: break
+                
+                full_parent_name = full_parent_name.strip()
+                
+                base_name_match = re.match(r'([\w:]+)', full_parent_name)
+                if not base_name_match: continue
+                parent_base_name = base_name_match.group(1)
+                if '::' in parent_base_name:
+                    parent_base_name = parent_base_name.split('::')[-1]
+
+                # Build implementation content for this specific class check
+                impl_content = ""
+                for f_path, f_content in impl_files_content.items():
+                    cnt = f_content
+                    if f_path == filepath:
+                        block_regex_strip = re.compile(
+                            re.escape(keyword) + r'((?:\s*using\s+' + re.escape(full_parent_name) + r'::\w+;)*)'
+                        )
+                        cnt = block_regex_strip.sub('', cnt)
+                    
+                    cnt = re.sub(r'//.*', '', cnt)
+                    cnt = re.sub(r'/\*.*?\*/', '', cnt, flags=re.DOTALL)
+                    impl_content += cnt + "\n"
+
+                all_headers = get_project_files(HEADER_EXTS)
+                parent_members = find_class_members(parent_base_name, all_headers, all_class_dot_h_macros)
+                child_members = find_class_members(child_class_name, [filepath], all_class_dot_h_macros)
+
+                members_to_use = set()
+                for name, p_count in parent_members.items():
+                    c_count = child_members.get(name, 0)
+                    if (c_count == 0 or p_count > c_count) and re.search(r'\b' + re.escape(name) + r'\b', impl_content):
+                        members_to_use.add(name)
+
+                # Find the indentation of the line where the keyword is located, for consistent formatting.
+                keyword_pos_in_class = class_full_text.find(keyword)
+                indent = '\t' # Fallback indent
+                if keyword_pos_in_class != -1:
+                    line_start = class_full_text.rfind('\n', 0, keyword_pos_in_class) + 1
+                    line_content = class_full_text[line_start:]
+                    indent_match = re.match(r'(\s*)', line_content)
+                    if indent_match:
+                        indent = indent_match.group(1)
+
+                # Generate a clean, multi-line block of 'using' statements.
+                new_block = keyword
+                if members_to_use:
+                    using_lines = [f"{indent}using {full_parent_name}::{member};" for member in sorted(list(members_to_use))]
+                    new_block += "\n" + "\n".join(using_lines)
+
+                # Use a flexible regex that can match both single-line and multi-line existing blocks.
+                block_regex = re.compile(
+                    re.escape(keyword) + r'((?:\s*using\s+' + re.escape(full_parent_name) + r'::\w+;)*)'
+                )
+                
+                block_match_in_class = block_regex.search(class_full_text)
+
+                if not block_match_in_class:
+                    print(f"  {C_YELLOW}[WARNING]{C_RESET} Could not find a replaceable block for {keyword} in {child_class_name}. Inserting fresh.")
+                    new_class_text = class_full_text.replace(keyword, new_block, 1)
+                else:
+                    existing_block = block_match_in_class.group(0)
+                    if existing_block.strip() == new_block.strip():
+                        print(f"  -> Declarations for {child_class_name} are already up-to-date.")
+                        continue
+                    new_class_text = class_full_text.replace(existing_block, new_block, 1)
+                
+                content = content[:class_start_pos] + new_class_text + content[class_end_pos:]
+                print(f"  -> Updated using declarations for {len(members_to_use)} members in {child_class_name}.")
+
+            if content != original_content:
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    f.write(content)
         except Exception as e:
             print(f"{C_YELLOW}[ERROR]{C_RESET} processing {filepath}: {e}")
             sys.exit(1)
@@ -475,7 +563,7 @@ def main():
         elif logic_type == 'def_seq_linter':
             apply_define_seq_linter(keyword, all_code_files, color)
         elif logic_type == 'expose_template_mem':
-            apply_expose_template_mem(keyword, header_files, color)
+            apply_expose_template_mem(keyword, header_files, color, all_code_files)
 
     print(f"{C_CYAN}--- Dynamic Compile End ---{C_RESET}")
 

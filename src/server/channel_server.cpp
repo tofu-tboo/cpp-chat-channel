@@ -18,10 +18,10 @@ ChannelServer::~ChannelServer() {
 bool ChannelServer::init() {
 	if (super::init()) {
 		// Periodically process switch requests from channels
-		task_runner.pushf(TS_LOGIC, AsThrottle([this]() {
+		service->get_worker()->add(ServiceWorker::Type::PRE, [this]() {
 			check_lobby();
-		}, 1000));
-		task_runner.pushb(TS_LOGIC, [this]() {
+		});
+		service->get_worker()->add(ServiceWorker::Type::POST, [this]() {
 			for (auto& [_, channel] : channels) {
 				channel->proc();
 			}

@@ -15,7 +15,7 @@ bool Channel::init() {
 }
 
 void Channel::proc() {
-	task_runner.run();
+	service->get_worker()->run();
 }
 
 void Channel::leave(Session& ses, const MessageReqDto& msg) {

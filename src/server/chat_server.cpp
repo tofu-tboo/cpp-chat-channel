@@ -13,11 +13,11 @@ ChatServer::~ChatServer() {
 
 bool ChatServer::init() {
 	if (super::init()) {
-		task_runner.pushb(TS_PRE, [this]() {
+		service->get_worker()->add(ServiceWorker::Type::PRE, [this]() {
 			std::unique_lock<std::shared_mutex> lock(cm_mtx);
 			cur_msgs.clear();
 		});
-		task_runner.pushf(TS_LOGIC, [this]() {
+		service->get_worker()->add(ServiceWorker::Type::POST, [this]() {
 			resolve_timestamps();
 			resolve_broadcast();
     	});

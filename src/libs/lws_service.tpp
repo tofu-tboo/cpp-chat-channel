@@ -22,11 +22,8 @@ protocols_t LwsService<T>::protocols[] = {
 };
 
 template <typename T>
-thread_local int LwsService<T>::tsi = 0;
-
-template <typename T>
 LwsService<T>::LwsService(const port_t port, const size_t tcnt): context(nullptr), fl_resv(false), Loggable("LwsService", _L_GREEN, this) {
-	thread_pool = new ThreadPool<T, "lws">(tcnt);
+	thread_pool = new ThreadPool<T, "lws">(this, tcnt);
 
 	// Set context info
 	memset(&info, 0, sizeof(info));
@@ -55,7 +52,7 @@ LwsService<T>::~LwsService() {
 
 #pragma region PUBLIC_FUNC
 template <typename T>
-void LwsService<T>::setup(SessionEvHandler<T>* i_handler, const std::function<void()>& task) {
+void LwsService<T>::setup(SessionEvHandler<T>* i_handler) {
 	if (context) return;
 	
 	context = lws_create_context(&info);
@@ -66,12 +63,19 @@ void LwsService<T>::setup(SessionEvHandler<T>* i_handler, const std::function<vo
 		throw runtime_errorf("LWS context supports %d threads, but %d requested. Rebuild libwebsockets with LWS_MAX_SMP > 1.", supported, info.count_threads);
 	}
 	
-	super::setup(i_handler, task);
+	super::setup(i_handler);
+}
+
+template <typename T>
+void LwsService<T>::stop() {
+	super::stop();
+	flush();
 }
 
 template <typename T>
 void LwsService<T>::serve() {
-	lws_service_tsi(context, 10, tsi);
+	auto tp = dynamic_cast<ThreadPool<T, "lws">*>(thread_pool);
+	lws_service_tsi(context, 0, tp->get_tsi());
 }
 
 template <typename T>

@@ -1,6 +1,8 @@
 #ifndef __LOGGABLE_H__
 #define __LOGGABLE_H__
 
+#define LOG_BUF_SIZE							(256)
+
 #define _L_RED									"\033[0;31m"
 #define _L_GREEN								"\033[0;32m"
 #define _L_BLUE									"\033[0;34m"
@@ -25,12 +27,12 @@ __virtual_parent__ class Loggable {
 
 		const char* get_log_context() const;
 
-		void log(const char* format, ...);
-		void elog(const char* format, ...);
-		void cur_t();
+		void log(const char* format, ...) const;
+		void elog(const char* format, ...) const;
+		std::string datetime_str() const;
 
 	func_private:
-		void repl(std::string& str, const std::string& sub);
+		void repl(std::string& str, const std::string& sub) const;
 };
 
 #endif

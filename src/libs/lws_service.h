@@ -11,7 +11,6 @@
 #include <libwebsockets.h>
 #include <string>
 #include <vector>
-#include <thread>
 #include "network_service.h"
 #include "set_super.h"
 #include "../dynamic_compile/dynamic_compile.h"
@@ -31,22 +30,23 @@ class LwsService: public NetworkService<T>, virtual public Loggable {
 		USING_TYPENAME(Session, NetworkService<T>);
 
 		__USING_SUPER_MEM__
-		using NetworkService<T>::SessionSecret;
+		using NetworkService<T>::accumulate;
 		using NetworkService<T>::broadcast;
 		using NetworkService<T>::broadcast_group;
-		using NetworkService<T>::change_session_group;
 		using NetworkService<T>::close;
-		using NetworkService<T>::construct_session;
 		using NetworkService<T>::del_resv;
-		using NetworkService<T>::destruct_session;
 		using NetworkService<T>::handler;
 		using NetworkService<T>::ip_conn_map;
-		using NetworkService<T>::register_handler;
+		using NetworkService<T>::is_running;
+		using NetworkService<T>::join;
 		using NetworkService<T>::send;
 		using NetworkService<T>::send_resv;
+		using NetworkService<T>::serve;
 		using NetworkService<T>::session_group;
+		using NetworkService<T>::setup;
+		using NetworkService<T>::start;
+		using NetworkService<T>::stop;
 		using NetworkService<T>::thread_pool;
-		using NetworkService<T>::threads_join;
 
 		struct LwsSession {
 			msec64 last_act;
@@ -60,8 +60,6 @@ class LwsService: public NetworkService<T>, virtual public Loggable {
 			LwsService<T>* service;
 			int tsi;
 		};
-	static_var_public:
-		static thread_local int tsi;
 	static_var_private:
 		static protocols_t protocols[];
 	static_func_private:
@@ -79,7 +77,8 @@ class LwsService: public NetworkService<T>, virtual public Loggable {
 		LwsService(const port_t port, const size_t tcnt = 1);
 		~LwsService();
 
-		virtual void setup(SessionEvHandler<T>* i_handler, const std::function<void()>& task) override final;
+		virtual void setup(SessionEvHandler<T>* i_handler) override final;
+		virtual void stop() override final;
 
 		virtual void serve() override final;
 
@@ -101,26 +100,41 @@ class LwsService: public NetworkService<T>, virtual public Loggable {
 
 template <typename T>
 class ThreadPool<T, "lws">: public IThreadPool<T> {
+	SET_SUPER(IThreadPool<T>);
 	type_protected:
+		__USING_SUPER_MEM__
+		using IThreadPool<T>::get_size;
+		using IThreadPool<T>::is_running;
+		using IThreadPool<T>::is_running_flag;
+		using IThreadPool<T>::join;
+		using IThreadPool<T>::service;
 		using IThreadPool<T>::size;
+		using IThreadPool<T>::start;
+		using IThreadPool<T>::stop;
+		using IThreadPool<T>::work;
+	static_var_protected:
+		static thread_local int tsi;
 	var_private:
 		std::vector<std::thread> threads;
 	func_public:
-		ThreadPool(const size_t s): IThreadPool<T>(s) {}
+		ThreadPool(NetworkService<T>* service, const size_t s): IThreadPool<T>(service, s) {}
+		virtual ~ThreadPool() {
+			if (is_running_flag) {
+				stop();
+			}
+			join();
+		}
 
-		virtual void start(const std::function<void()>& task) override final {
+		virtual void start() override final {
+			is_running_flag = true;
 			for (size_t i = 0; i < size; i++) {
-				threads.emplace_back([i, task]() {
-					LwsService<T>::tsi = (int)i;
-					task();
+				threads.emplace_back([this, i]() {
+					tsi = (int)i;
+					while (is_running_flag) {
+						service->serve();
+					}
 				});
 			}
-		}
-		virtual void stop() override final {
-			// for (auto& thread : threads) {
-			// 	if (thread.joinable())
-			// 		thread.join();
-			// }
 		}
 		virtual void join() override final {
 			for (auto& thread : threads) {
@@ -128,7 +142,14 @@ class ThreadPool<T, "lws">: public IThreadPool<T> {
 					thread.join();
 			}
 		}
+
+		int get_tsi() const {
+			return tsi;
+		}
 };
+
+template <typename T>
+thread_local int ThreadPool<T, "lws">::tsi = 0;
 
 #include "lws_service.tpp"
 

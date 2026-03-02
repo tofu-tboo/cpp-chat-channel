@@ -18,52 +18,52 @@ const char* Loggable::get_log_context() const {
 	return _log_header.c_str();
 }
 
-void Loggable::log(const char* format, ...) {
-	std::string fmt(format);
-	repl(fmt, _color);
+void Loggable::log(const char* format, ...) const {
+    char msg_buffer[LOG_BUF_SIZE];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(msg_buffer, sizeof(msg_buffer), format, args);
+    va_end(args);
 
-	va_list args;
-	va_start(args, format);
-	cur_t();
-	printf(" %s", get_log_context());
-	vprintf(fmt.c_str(), args);
-	printf(___L_ESCAPE "\n");
-	va_end(args);
+    std::string fmt_msg(msg_buffer);
+    repl(fmt_msg, _color);
+
+    std::string full_log = datetime_str() + " " + get_log_context() + fmt_msg + ___L_ESCAPE + "\n";
+
+    printf("%s", full_log.c_str());
 };
 
-void Loggable::elog(const char* format, ...) {
-	std::string fmt(format);
-	repl(fmt, _L_RED);
+void Loggable::elog(const char* format, ...) const {
+	char msg_buffer[LOG_BUF_SIZE];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(msg_buffer, sizeof(msg_buffer), format, args);
+    va_end(args);
 
-	va_list args;
-	va_start(args, format);
-	cur_t();
-	fprintf(stderr, " %s", get_log_context());
-	fprintf(stderr, _L_RED);
-	vfprintf(stderr, fmt.c_str(), args);
-	fprintf(stderr, ___L_ESCAPE "\n");
-	va_end(args);
+    std::string fmt_msg(msg_buffer);
+    repl(fmt_msg, _L_RED);
+
+    std::string full_log = datetime_str() + " " + get_log_context() + _L_RED + fmt_msg + ___L_ESCAPE + "\n";
+
+    fprintf(stderr, "%s", full_log.c_str());
 }
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-truncation"
 
-void Loggable::cur_t() {
+std::string Loggable::datetime_str() const {
     auto now = std::chrono::system_clock::now();
-    
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
-
     std::time_t timer = std::chrono::system_clock::to_time_t(now);
     std::tm* bt = std::localtime(&timer);
 
-    printf("%s%04d-%02d-%02d %02d:%02d:%02d.%03ld", _color.c_str(),
-           bt->tm_year + 1900,
-           bt->tm_mon + 1,
-           bt->tm_mday,
-           bt->tm_hour,
-           bt->tm_min,
-           bt->tm_sec,
-           ms.count());
-}
+    char time_buf[32];
+    snprintf(time_buf, sizeof(time_buf), "%04d-%02d-%02d %02d:%02d:%02d.%03ld", bt->tm_year + 1900, bt->tm_mon + 1, bt->tm_mday, bt->tm_hour, bt->tm_min, bt->tm_sec, ms.count());
 
-void Loggable::repl(std::string& str, const std::string& sub) {
+    return _color + time_buf;
+}
+#pragma GCC diagnostic pop
+
+void Loggable::repl(std::string& str, const std::string& sub) const {
 	size_t pos = str.find(_L_DEFAULT);
 	if (pos != std::string::npos) {
 		str.replace(pos, sizeof(_L_DEFAULT) - 1, sub);

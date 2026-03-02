@@ -1,5 +1,5 @@
-#ifndef __SOCKET_EVENTER_H__
-#define __SOCKET_EVENTER_H__
+#ifndef __NETWORK_SERVICE_H__
+#define __NETWORK_SERVICE_H__
 
 #define MAX_FRAME_SIZE			(2048)
 #define MAX_THREAD				(8)
@@ -23,7 +23,9 @@
 #include <vector>
 #include <unordered_map>
 #include <climits>
+#include <thread>
 #include <functional>
+#include <atomic>
 
 #include "dto.h"
 #include "loggable.h"
@@ -96,7 +98,9 @@ class NetworkService: virtual public Loggable {
 		NetworkService();
 		~NetworkService();
 
-		virtual void setup(SessionEvHandler<T>* i_handler, const std::function<void()>& task);
+		virtual void setup(SessionEvHandler<T>* i_handler);
+		virtual void start();
+		virtual void stop();
 
 		virtual void serve() = 0;
 
@@ -114,7 +118,9 @@ class NetworkService: virtual public Loggable {
 		virtual void close(Session* ses, const std::string& msg);
 		virtual void close(Session* ses, const unsigned char* data, size_t len) = 0;
 
-		virtual void threads_join();
+		virtual void join();
+
+		bool is_running() const;
 	func_protected:
 		virtual void accumulate(Session* ses, const unsigned char* data, size_t len) = 0;
 
@@ -127,24 +133,34 @@ template <typename T>
 class IThreadPool {
 	var_protected:
 		size_t size;
+		std::thread bg_thread;
+		NetworkService<T>* service;
+		std::atomic<bool> is_running_flag;
+		friend class NetworkService<T>;
 	func_public:
-		IThreadPool(const size_t s) {
+		IThreadPool(NetworkService<T>* service, const size_t s): service(service), is_running_flag(false) {
 			if (s > MAX_THREAD)
 				size = MAX_THREAD;
 			else
 				size = s;
 		};
-		~IThreadPool() = default;
+		virtual ~IThreadPool() = default;
 
-		virtual void start(const std::function<void()>& task) = 0;
-		virtual void stop() = 0;
+		virtual void start() = 0;
+		virtual void stop() {
+			is_running_flag = false;
+		}
 		virtual void join() = 0;
 		
 		size_t get_size() const {
 			return size;
 		};
+
+		bool is_running() const {
+			return is_running_flag;
+		}
 };
 
 #include "network_service.tpp"
 
-#endif 
+#endif

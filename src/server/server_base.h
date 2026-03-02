@@ -64,9 +64,6 @@ class ServerBase: public SessionEvHandler<U>, virtual public Loggable {
 
 		std::shared_mutex nd_mtx;
 
-        TaskRunner<void()> task_runner;
-        std::atomic<bool> is_running;
-
 		unsigned int max_conn;
 		std::atomic<unsigned int> cur_conn;
     func_public:

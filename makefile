@@ -1,42 +1,114 @@
-PACKAGES = -ljansson -lwebsockets
-OUT_DIR = exe
-CXXFLAGS = -O2 -std=c++20
-# 윈도우 크로스 컴파일러 (Linux/WSL에서 Windows용 빌드 시 필요. 예: sudo apt install mingw-w64)
-CXX_WIN = x86_64-w64-mingw32-g++
+# =============================================================================
+#  Configuration
+# =============================================================================
+# Compiler and tools
+CXX      := g++
+CXX_WIN  := x86_64-w64-mingw32-g++
+PYTHON   := python3
 
-.PHONY: all client server clean libs debug
+# Directories
+OUT_DIR := exe
+OBJ_DIR := obj
 
-debug: CXXFLAGS += -DDEBUG
-debug: all
+# Flags
+# -Isrc: Add src to include paths to allow #include "libs/..."
+CXXFLAGS := -O2 -std=c++20 -Isrc
+LDFLAGS  := -ljansson -lwebsockets
 
-all: $(OUT_DIR) libs client server
+# =============================================================================
+#  Source & Object File Definitions
+# =============================================================================
+# Automatically find all .cpp files
+LIB_SRC           := $(wildcard src/libs/*.cpp)
+SERVER_SRC        := $(wildcard src/server/*.cpp)
+CLIENT_WIN_SRC    := src/client/client_win.cpp
+CLIENT_LINUX_SRC  := src/client/client.cpp
 
+# Separate main() files from common server sources
+MAIN_SERVER_SRC     := src/server/server.cpp
+SIMPLE_SERVER_SRC   := src/server/server_simple.cpp
+COMMON_SERVER_SRC   := $(filter-out $(MAIN_SERVER_SRC) $(SIMPLE_SERVER_SRC), $(SERVER_SRC))
+
+# Generate corresponding object file lists
+LIB_OBJ             := $(patsubst src/%.cpp,$(OBJ_DIR)/%.o,$(LIB_SRC))
+COMMON_SERVER_OBJ   := $(patsubst src/%.cpp,$(OBJ_DIR)/%.o,$(COMMON_SERVER_SRC))
+MAIN_SERVER_OBJ     := $(patsubst src/%.cpp,$(OBJ_DIR)/%.o,$(MAIN_SERVER_SRC))
+SIMPLE_SERVER_OBJ   := $(patsubst src/%.cpp,$(OBJ_DIR)/%.o,$(SIMPLE_SERVER_SRC))
+CLIENT_WIN_OBJ      := $(patsubst src/%.cpp,$(OBJ_DIR)/%.o,$(CLIENT_WIN_SRC))
+
+# Define executables
+SERVER_EXE        := $(OUT_DIR)/server
+
+# =============================================================================
+#  Build Rules
+# =============================================================================
+# Default goal: build the main server
+.DEFAULT_GOAL := server
+
+# Phony targets for commands that aren't files
+.PHONY: all server server-simple client client-win debug check clean ngrok dynamic_compile
+
+# --- High-Level Targets ---
+all: server server-simple client
+
+server: $(OUT_DIR) $(SERVER_EXE)
+
+server-simple: $(OUT_DIR) $(OUT_DIR)/server-simple
+
+client: $(OUT_DIR) $(OUT_DIR)/client
+
+client-win: $(OUT_DIR) $(OUT_DIR)/client.exe
+
+# --- Linking Executables ---
+# Main server executable
+$(OUT_DIR)/server: $(MAIN_SERVER_OBJ) $(COMMON_SERVER_OBJ) $(LIB_OBJ) | dynamic_compile
+	@echo "==> Linking $@..."
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+
+# Simple server executable
+$(OUT_DIR)/server-simple: $(SIMPLE_SERVER_OBJ) $(COMMON_SERVER_OBJ) $(LIB_OBJ) | dynamic_compile
+	@echo "==> Linking $@..."
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+
+# Linux client executable
+$(OUT_DIR)/client: $(CLIENT_LINUX_SRC) | $(OUT_DIR)
+	@echo "==> Building Linux client..."
+	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
+
+# Windows client executable (cross-compile)
+$(OUT_DIR)/client.exe: $(CLIENT_WIN_OBJ) $(OBJ_DIR)/libs/util.o
+	@echo "==> Building Windows client $@..."
+	$(CXX_WIN) $(CXXFLAGS) -o $@ $^ -lws2_32 -static
+
+# --- Compilation & Utility Rules ---
+# Pattern rule to compile any .cpp from src/ into an .o in obj/
+$(OBJ_DIR)/%.o: src/%.cpp
+	@mkdir -p $(@D)
+	@echo "CXX $<"
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+# Run the dynamic compile script. This is a prerequisite for linking.
+dynamic_compile:
+	@echo "==> Running dynamic compile script"
+	$(PYTHON) src/dynamic_compile/dynamic_compile.py
+
+# Create output directory if it doesn't exist
 $(OUT_DIR):
 	mkdir -p $(OUT_DIR)
 
-client: src/client/client.cpp | $(OUT_DIR)
-	g++ $(CXXFLAGS) -o $(OUT_DIR)/$@ $^ $(PACKAGES)
+# --- Utility Commands ---
+# Debug build: adds -g and -DDEBUG flags and rebuilds everything
+debug: clean
+	$(MAKE) all CXXFLAGS="$(CXXFLAGS) -g -DDEBUG"
 
-# 윈도우용 클라이언트 빌드 (Linux/WSL에서 크로스 컴파일)
-client_win: src/client/client_win.cpp src/libs/util.cpp | $(OUT_DIR)
-	$(CXX_WIN) $(CXXFLAGS) -o $(OUT_DIR)/client.exe $^ -lws2_32 -static
-
-server: src/server/server.cpp src/server/channel_server.cpp src/server/chat_server.cpp src/server/channel.cpp src/libs/util.cpp src/libs/json.cpp src/libs/json_translator.cpp src/libs/loggable.cpp | $(OUT_DIR)
-	python3 src/dynamic_compile/dynamic_compile.py
-	g++ $(CXXFLAGS) -o $(OUT_DIR)/$@ $^ $(PACKAGES)
-
-server-simple: src/server/channel_server.cpp src/server/chat_server.cpp src/server/channel.cpp src/libs/util.cpp src/libs/json.cpp src/server/server_simple.cpp src/libs/json_translator.cpp src/libs/loggable.cpp | $(OUT_DIR)
-	python3 src/dynamic_compile/dynamic_compile.py
-	g++ $(CXXFLAGS) -o $(OUT_DIR)/$@ $^ $(PACKAGES)
-
-libs: src/libs/util.cpp src/libs/json.cpp src/libs/task_runner.tpp src/libs/network_service.tpp src/libs/json_translator.cpp src/libs/loggable.cpp
-	g++ -c $< -o $(OUT_DIR)/$@ $(PACKAGES)
+# Run valgrind for memory checking on the main server
+check:
+	$(MAKE) server CXXFLAGS="$(CXXFLAGS) -g -DDEBUG"
+	valgrind --leak-check=full --show-leak-kinds=all ./$(SERVER_EXE)
 
 clean:
-	rm -f $(OUT_DIR)/client $(OUT_DIR)/server *.o
-
-check: debug
-	valgrind --leak-check=full --show-leak-kinds=all ./$(OUT_DIR)/server
+	@echo "==> Cleaning up..."
+	rm -rf $(OUT_DIR) $(OBJ_DIR)
 
 ngrok:
 	ngrok tcp 4800

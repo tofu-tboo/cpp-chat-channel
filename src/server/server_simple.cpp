@@ -18,14 +18,12 @@ void signal_handler(int signum) {
 
 int main(int argc, char* argv[]) {
     // if one of argv's key is lobbyN or chN, parse the its value as max fd of ChannelServer
-	int lobby_max_fd = 32, ch_max_fd = 32;
+	int lobby_max_fd = 32;
 	const char* env_p = std::getenv("PORT");
 	int port = env_p != nullptr ? atoi(env_p) : 4800;
 	for (int i = 1; i < argc; i++) {
 		if (strncmp(argv[i], "lobbyN=", 7) == 0) {
 			lobby_max_fd = atoi(argv[i] + 7);
-		} else if (strncmp(argv[i], "chN=", 4) == 0) {
-			ch_max_fd = atoi(argv[i] + 4);
 		} else if (strncmp(argv[i], "port=", 5) == 0) {
 			port = atoi(argv[i] + 5);
 		}
