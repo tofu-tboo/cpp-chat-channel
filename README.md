@@ -144,5 +144,4 @@
 2. XSS 방지
 3. .h, .cpp 의존성 분리
 4. black list
-5. multi-threading => create thread to run concurrently => introduce public sul_schedule task wrapper
-6. Channel control for multi-threading
+5. Channel control for multi-threading

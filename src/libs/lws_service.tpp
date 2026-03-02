@@ -34,10 +34,6 @@ LwsService<T>::LwsService(const port_t port, const size_t tcnt): context(nullptr
 	// info.fd_limit_per_thread = int;
 	info.count_threads = thread_pool->get_size();
 	info.user = this;
-
-	// Set sul wrapper
-	tlist_wrapper.service = this;
-	memset(&tlist_wrapper.sul, 0, sizeof(utimer_list_t));
 }
 
 template <typename T>
@@ -46,8 +42,6 @@ LwsService<T>::~LwsService() {
 		lws_context_destroy(context);
 		context = nullptr;
 	}
-
-	lws_sul_cancel(&tlist_wrapper.sul); // stack safe
 }
 
 #pragma region PUBLIC_FUNC
@@ -211,21 +205,6 @@ __CALLBACK_SAFE__ std::string LwsService<T>::get_ip(lws* wsi) {
 }
 
 template <typename T>
-__CALLBACK_SAFE__ void LwsService<T>::quit_service(utimer_list_t* sul) {
-	SulWrapper* wrapper = lws_container_of(sul, SulWrapper, sul);
-	LwsService<T>* service = wrapper->service;
-
-	service->flush();
-
-	reserve_quit(service);
-}
-
-template <typename T>
-__CALLBACK_SAFE__ void LwsService<T>::reserve_quit(LwsService<T>* service) {
-	lws_sul_schedule(service->context, service->tlist_wrapper.tsi, &service->tlist_wrapper.sul, quit_service, 500 * M2U);
-}
-
-template <typename T>
 int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session, void* in, size_t len) {
 	if (!wsi) return 0;
 	ctx* context = lws_get_context(wsi);
@@ -240,17 +219,10 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 	int in_offset = 0;
 
 	switch (reason) {
-		case LWS_CALLBACK_PROTOCOL_INIT:
-		{
-			instance->log(_L_YELLOW "Quit timer is reserved.");
-			int tsi = lws_get_tsi(wsi);
-			if (tsi == 0) {
-				instance->tlist_wrapper.tsi = tsi;
-				reserve_quit(instance);
-			}
-
-            break;
-		}
+		// case LWS_CALLBACK_PROTOCOL_INIT:
+		// {
+        //     break;
+		// }
 		case LWS_CALLBACK_RAW_ADOPT:
 		case LWS_CALLBACK_ESTABLISHED:
 		{
