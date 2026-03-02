@@ -133,7 +133,6 @@ template <typename T>
 class IThreadPool {
 	var_protected:
 		size_t size;
-		std::thread bg_thread;
 		NetworkService<T>* service;
 		std::atomic<bool> is_running_flag;
 		friend class NetworkService<T>;

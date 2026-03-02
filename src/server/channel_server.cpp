@@ -17,11 +17,11 @@ ChannelServer::~ChannelServer() {
 
 bool ChannelServer::init() {
 	if (super::init()) {
-		// Periodically process switch requests from channels
-		service->get_worker()->add(ServiceWorker::Type::PRE, [this]() {
+		cron_worker.schedule_every("check lobby", 1000, [this]() {
 			check_lobby();
 		});
-		service->get_worker()->add(ServiceWorker::Type::POST, [this]() {
+		cron_worker.schedule_every("channel proc", 50, [this]() {
+			std::shared_lock lock(chs_mtx);
 			for (auto& [_, channel] : channels) {
 				channel->proc();
 			}

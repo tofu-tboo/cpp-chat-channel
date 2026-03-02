@@ -476,6 +476,9 @@ def apply_expose_template_mem(keyword, project_files, color, all_code_files):
                 for f_path, f_content in impl_files_content.items():
                     cnt = f_content
                     if f_path == filepath:
+                        # Use class_full_text for header to restrict scope
+                        cnt = class_full_text
+                        
                         block_regex_strip = re.compile(
                             re.escape(keyword) + r'((?:\s*using\s+' + re.escape(full_parent_name) + r'::\w+;)*)'
                         )
@@ -492,7 +495,8 @@ def apply_expose_template_mem(keyword, project_files, color, all_code_files):
                 members_to_use = set()
                 for name, p_count in parent_members.items():
                     c_count = child_members.get(name, 0)
-                    if (c_count == 0 or p_count > c_count) and re.search(r'\b' + re.escape(name) + r'\b', impl_content):
+                    # Strict check: ensure name is not preceded by ., ->, or ::
+                    if (c_count == 0 or p_count > c_count) and re.search(r'(?<!\.)(?<!->)(?<!::)\b' + re.escape(name) + r'\b', impl_content):
                         members_to_use.add(name)
 
                 # Find the indentation of the line where the keyword is located, for consistent formatting.

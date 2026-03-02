@@ -248,6 +248,7 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 				instance->tlist_wrapper.tsi = tsi;
 				reserve_quit(instance);
 			}
+
             break;
 		}
 		case LWS_CALLBACK_RAW_ADOPT:

@@ -51,13 +51,13 @@ SERVER_EXE        := $(OUT_DIR)/server
 # --- High-Level Targets ---
 all: server server-simple client
 
-server: $(OUT_DIR) $(SERVER_EXE)
+server: dynamic_compile $(OUT_DIR) $(SERVER_EXE)
 
-server-simple: $(OUT_DIR) $(OUT_DIR)/server-simple
+server-simple: dynamic_compile $(OUT_DIR) $(OUT_DIR)/server-simple
 
-client: $(OUT_DIR) $(OUT_DIR)/client
+client: dynamic_compile $(OUT_DIR) $(OUT_DIR)/client
 
-client-win: $(OUT_DIR) $(OUT_DIR)/client.exe
+client-win: dynamic_compile $(OUT_DIR) $(OUT_DIR)/client.exe
 
 # --- Linking Executables ---
 # Main server executable

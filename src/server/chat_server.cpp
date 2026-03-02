@@ -13,14 +13,12 @@ ChatServer::~ChatServer() {
 
 bool ChatServer::init() {
 	if (super::init()) {
-		service->get_worker()->add(ServiceWorker::Type::PRE, [this]() {
+		cron_worker.schedule_every("broadcast", 50, [this]() {
+			resolve_timestamps();
+			resolve_broadcast();
 			std::unique_lock<std::shared_mutex> lock(cm_mtx);
 			cur_msgs.clear();
 		});
-		service->get_worker()->add(ServiceWorker::Type::POST, [this]() {
-			resolve_timestamps();
-			resolve_broadcast();
-    	});
 		return true;
 	}
 	return false;

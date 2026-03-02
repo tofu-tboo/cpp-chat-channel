@@ -15,7 +15,7 @@ bool Channel::init() {
 }
 
 void Channel::proc() {
-	service->get_worker()->run();
+	cron_worker.run_pending();
 }
 
 void Channel::leave(Session& ses, const MessageReqDto& msg) {

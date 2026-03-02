@@ -20,15 +20,13 @@ bool ServerBase<U>::init() {
 	if (service) {
 		service->setup(this);
 
-		ServiceWorker* worker = service->get_worker();
-
-		// Cleanup Qs
-		worker->add(ServiceWorker::Type::PRE, [this]() {
-			std::unique_lock<std::shared_mutex> lock(nd_mtx);
+		cron_worker.schedule_every("session deletion", 1000, [this]() {
+			// Cleanup Qs
+			resolve_close();
+			// Deletion sessions
+			std::unique_lock lock(nd_mtx);
 			nxt_close.clear();
 		});
-		// Deletion fds
-		worker->add(ServiceWorker::Type::POST, [this]() { resolve_close(); });
 
 		return true;
 	} 
@@ -40,17 +38,17 @@ ServerBase<U>::~ServerBase() {}
 
 template <typename U>
 void ServerBase<U>::proc() {
-	ServiceWorker* worker = service->get_worker();
    	service->start();
-	// while (service->is_running()) {
-	// 		try {
-	// 			if (worker) worker->run(ServiceWorker::BG);
-	// 		} catch(const std::exception& e) {
-	// 			elog("Exception in task runner: %s", e.what());
-	// 		}
-	// 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
-	// 	}
-	service->join();
+	std::thread background([this]() {
+		while (service->is_running()) {
+			cron_worker.run_pending();
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
+	});
+	service->join(); // Wait for I/O threads to finish
+	if (background.joinable()) {
+		background.join(); // Then, wait for the cron worker thread to finish
+	}
 }
 
 template <typename U>

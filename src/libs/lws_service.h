@@ -36,15 +36,11 @@ class LwsService: public NetworkService<T>, virtual public Loggable {
 		using NetworkService<T>::close;
 		using NetworkService<T>::del_resv;
 		using NetworkService<T>::handler;
-		using NetworkService<T>::ip_conn_map;
-		using NetworkService<T>::is_running;
-		using NetworkService<T>::join;
 		using NetworkService<T>::send;
 		using NetworkService<T>::send_resv;
 		using NetworkService<T>::serve;
 		using NetworkService<T>::session_group;
 		using NetworkService<T>::setup;
-		using NetworkService<T>::start;
 		using NetworkService<T>::stop;
 		using NetworkService<T>::thread_pool;
 
@@ -92,6 +88,7 @@ class LwsService: public NetworkService<T>, virtual public Loggable {
 		virtual void accumulate(Session* ses, const unsigned char* data, size_t len) override final;
 	func_private:
 		void flush();
+		friend void ThreadPool<T, "lws">::stop();
 
 		__CALLBACK_SAFE__ void check_pong(Session* ses);
 		__CALLBACK_SAFE__ void set_timeout(Session* ses, lws* wsi, int flag);
@@ -103,15 +100,12 @@ class ThreadPool<T, "lws">: public IThreadPool<T> {
 	SET_SUPER(IThreadPool<T>);
 	type_protected:
 		__USING_SUPER_MEM__
-		using IThreadPool<T>::get_size;
-		using IThreadPool<T>::is_running;
 		using IThreadPool<T>::is_running_flag;
 		using IThreadPool<T>::join;
 		using IThreadPool<T>::service;
 		using IThreadPool<T>::size;
 		using IThreadPool<T>::start;
 		using IThreadPool<T>::stop;
-		using IThreadPool<T>::work;
 	static_var_protected:
 		static thread_local int tsi;
 	var_private:
@@ -135,6 +129,12 @@ class ThreadPool<T, "lws">: public IThreadPool<T> {
 					}
 				});
 			}
+		}
+		virtual void stop() override final {
+			super::stop();
+
+			auto service = dynamic_cast<LwsService<T>*>(this->service);
+			service->flush();
 		}
 		virtual void join() override final {
 			for (auto& thread : threads) {

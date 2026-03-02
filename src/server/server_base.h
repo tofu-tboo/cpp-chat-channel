@@ -22,12 +22,11 @@
 #include <atomic>
 #include <memory>
 
-#include "../libs/task_runner.h"
 #include "../libs/loggable.h"
 #include "../libs/class.h"
 #include "../libs/network_service.h"
 #include "../libs/session_event_handler.h"
-
+#include "../libs/cron_worker.h"
 
 /*
 All servers have only one shared file descriptor listening on a port.
@@ -66,6 +65,8 @@ class ServerBase: public SessionEvHandler<U>, virtual public Loggable {
 
 		unsigned int max_conn;
 		std::atomic<unsigned int> cur_conn;
+
+		CronWorker cron_worker;
     func_public:
         ServerBase(std::shared_ptr<NetworkService<U>> di_service, std::unique_ptr<IMsgTranslator> processor, const int max_fd = 256);
         virtual ~ServerBase();
