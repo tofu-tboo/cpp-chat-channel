@@ -55,15 +55,15 @@ class ServerBase: public SessionEvHandler<U>, virtual public Loggable {
             TS_COUNT
         };
 	var_protected:
-        int branch_id; // branch's id
+        const int branch_id; // branch's id
 		std::shared_ptr<NetworkService<U>> service;
 		std::unique_ptr<IMsgTranslator> msg_translator;
 
         std::unordered_set<Session*> nxt_close;
 
-		std::shared_mutex nd_mtx;
+		std::shared_mutex nc_mtx;
 
-		unsigned int max_conn;
+		const unsigned int max_conn;
 		std::atomic<unsigned int> cur_conn;
 
 		CronWorker cron_worker;
@@ -87,7 +87,7 @@ class ServerBase: public SessionEvHandler<U>, virtual public Loggable {
 		virtual void handle_request(Session& ses, std::unique_ptr<Request> req) = 0;
 
 		virtual void free_user(Session& ses);
-		void resv_close(Session* ses);
+		void rsv_close(Session* ses);
 };
 
 #include "server_base.tpp"

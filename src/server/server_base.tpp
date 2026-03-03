@@ -6,9 +6,7 @@
 #include <chrono>
 
 template <typename U>
-ServerBase<U>::ServerBase(std::shared_ptr<NetworkService<U>> di_service, std::unique_ptr<IMsgTranslator> processor, const int max): service(std::move(di_service)), msg_translator(std::move(processor)), max_conn(max), cur_conn(0), Loggable("ServerBase", _L_BLUE, this) {
-    branch_id = now_ms();
-
+ServerBase<U>::ServerBase(std::shared_ptr<NetworkService<U>> di_service, std::unique_ptr<IMsgTranslator> processor, const int max): service(std::move(di_service)), msg_translator(std::move(processor)), branch_id(now_ms()), max_conn(max), cur_conn(0), Loggable("ServerBase", _L_BLUE, this) {
 	if (!service)
 		throw std::runtime_error("Network Service NullPtr.");
 	else if (!msg_translator)
@@ -24,7 +22,7 @@ bool ServerBase<U>::init() {
 			// Cleanup Qs
 			resolve_close();
 			// Deletion sessions
-			std::unique_lock lock(nd_mtx);
+			std::unique_lock lock(nc_mtx);
 			nxt_close.clear();
 		});
 
@@ -62,7 +60,7 @@ void ServerBase<U>::stop() {
 #pragma region PROTECTED_FUNC
 template <typename U>
 void ServerBase<U>::resolve_close() {
-	std::shared_lock<std::shared_mutex> lock(nd_mtx);
+	std::shared_lock lock(nc_mtx);
     for (Session* ses : nxt_close) {
 		service->close(ses, std::string("Server closed connection."));
         // cl_session(ses);
@@ -109,8 +107,8 @@ template <typename U>
 void ServerBase<U>::free_user(Session& ses) {}
 
 template <typename U>
-void ServerBase<U>::resv_close(Session* ses) {
-	std::unique_lock<std::shared_mutex> lock(nd_mtx);
+void ServerBase<U>::rsv_close(Session* ses) {
+	std::unique_lock lock(nc_mtx);
 	nxt_close.insert(ses);
 }
 #pragma endregion

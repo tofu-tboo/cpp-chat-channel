@@ -22,7 +22,7 @@ protocols_t LwsService<T>::protocols[] = {
 };
 
 template <typename T>
-LwsService<T>::LwsService(const port_t port, const size_t tcnt): context(nullptr), fl_resv(false), Loggable("LwsService", _L_GREEN, this) {
+LwsService<T>::LwsService(const port_t port, const size_t tcnt): context(nullptr), fl_rsv(false), Loggable("LwsService", _L_GREEN, this) {
 	thread_pool = new ThreadPool<T, "lws">(this, tcnt);
 
 	// Set context info
@@ -131,7 +131,7 @@ void LwsService<T>::broadcast_group(int group, const unsigned char* data, size_t
 template <typename T>
 void LwsService<T>::close(Session* ses, const unsigned char* data, size_t len) {
 	if (ses) {
-		del_resv.add(ses, std::string(reinterpret_cast<const char*>(data), len));
+		del_rsv.add(ses, std::string(reinterpret_cast<const char*>(data), len));
 	}
 	flush();
 }
@@ -156,15 +156,15 @@ void LwsService<T>::accumulate(Session* ses, const unsigned char* data, size_t l
 		memcpy(&packet[LWS_PRE + extra], data, len);
     }
 
-	send_resv.add(ses, std::move(packet));
+	send_rsv.add(ses, std::move(packet));
 }
 #pragma endregion
 #pragma region PRIVATE_FUNC
 template <typename T>
 void LwsService<T>::flush() {
-	if (!fl_resv) {
+	if (!fl_rsv) {
 		lws_cancel_service(context);
-		fl_resv = true;
+		fl_rsv = true;
 	}
 }
 
@@ -247,11 +247,11 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 				map[ip]++;
 			});
 
-			switch_hash(lws_get_protocol(wsi)->name) {
-				case_hash(WS_NAME):
+			switch_hash (lws_get_protocol(wsi)->name) {
+				case_hash (WS_NAME):
 					ses->secret->prot_id = WS;
 					break;
-				case_hash(TCP_NAME):
+				case_hash (TCP_NAME):
 					ses->secret->prot_id = TCP;
 					break;
 			}
@@ -264,7 +264,7 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 				instance->set_timeout(ses, wsi, TO_EV_PING_PONG); // set TCP ping-pong timer
 			}
 
-			instance->send_resv.add(ses, std::queue<std::vector<unsigned char>>());
+			instance->send_rsv.add(ses, std::queue<std::vector<unsigned char>>());
 
 			instance->session_group.add(ses->group, ses); 
 			
@@ -323,8 +323,8 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 		{
 			std::vector<unsigned char> packet;
 			bool more = false;
-			instance->send_resv.task([ses, wsi, instance, &event, &packet, &more](auto& resv_map) {
-				if (resv_map[ses].empty()) return;
+			instance->send_rsv.task([ses, wsi, instance, &event, &packet, &more](auto& rsv_map) {
+				if (rsv_map[ses].empty()) return;
 
 				event = NS_EV::SEND;
 				if (lws_partial_buffered(wsi)) {
@@ -333,9 +333,9 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 					return;
 				}
 
-				packet = std::move(resv_map[ses].front());
-				resv_map[ses].pop();
-				more = !resv_map[ses].empty();
+				packet = std::move(rsv_map[ses].front());
+				rsv_map[ses].pop();
+				more = !rsv_map[ses].empty();
 			});
 				
 			int n;
@@ -374,10 +374,10 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 		case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
 		{
 
-			instance->fl_resv = false;
+			instance->fl_rsv = false;
 			std::map<Session*, std::string> dels;
 
-			dels = instance->del_resv.move();
+			dels = instance->del_rsv.move();
 			
 			if (!dels.empty()) {
 				instance->log(_L_YELLOW "Close asynchronously: Sessions * %d.", (int)dels.size());
@@ -442,7 +442,7 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 			}
 			ses->~Session();
 
-			instance->send_resv.del(ses);
+			instance->send_rsv.del(ses);
 			
 			instance->session_group.task([ses](auto& group_map) {
 				if (group_map.find(ses->group) != group_map.end())

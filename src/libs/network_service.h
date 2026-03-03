@@ -87,8 +87,8 @@ class NetworkService: virtual public Loggable {
 	var_protected:
 		// Queue
 		AutoLockContainer<std::map<int, std::set<Session*>>> session_group; // TODO?: AutoLockContainer<std::map<int, AutoLockContainer<std::set<Session*>>>>
-		AutoLockContainer<std::map<Session*, std::string>> del_resv; // save msg as string since easier auto free
-		AutoLockContainer<std::map<Session*, std::queue<std::vector<unsigned char>>>> send_resv;
+		AutoLockContainer<std::map<Session*, std::string>> del_rsv; // save msg as string since easier auto free
+		AutoLockContainer<std::map<Session*, std::queue<std::vector<unsigned char>>>> send_rsv;
 		AutoLockContainer<std::unordered_map<std::string, int>> ip_conn_map;
 
 		SessionEvHandler<T>* handler; // initial client-handler

@@ -16,7 +16,7 @@ bool ChatServer::init() {
 		cron_worker.schedule_every("broadcast", 50, [this]() {
 			resolve_timestamps();
 			resolve_broadcast();
-			std::unique_lock<std::shared_mutex> lock(cm_mtx);
+			std::unique_lock lock(cm_mtx);
 			cur_msgs.clear();
 		});
 		return true;
@@ -28,8 +28,8 @@ bool ChatServer::init() {
 
 
 void ChatServer::resolve_timestamps() {
-	std::unique_lock<std::shared_mutex> lock(mq_mtx);
-	std::unique_lock<std::shared_mutex> lock2(cm_mtx);
+	std::unique_lock lock(mq_mtx);
+	std::unique_lock lock2(cm_mtx);
     auto local_q = mq.pop_all();
 	lock.unlock();
 
@@ -43,37 +43,38 @@ void ChatServer::resolve_timestamps() {
 
 void ChatServer::resolve_broadcast() {
     ChatResDtoArray dtos;
-	std::shared_lock<std::shared_mutex> lock(cm_mtx);
-
-    for (const auto& [timestamp, req_pair] : cur_msgs) {
-		const auto& req = req_pair.second;
-		switch (req.type)
-		{
-			case USER:
+	{
+		std::shared_lock gather_msg(cm_mtx);
+		for (const auto& [timestamp, req_pair] : cur_msgs) {
+			const auto& req = req_pair.second;
+			switch (req.type)
 			{
-				ChatResDto dto;
-				dto.type = "user";
-				dto.event = req.text;
-				dto.user_name = req.user_name;
-				dtos.entries.push_back(std::move(dto));
+				case USER:
+				{
+					ChatResDto dto;
+					dto.type = "user";
+					dto.event = req.text;
+					dto.user_name = req.user_name;
+					dtos.entries.push_back(std::move(dto));
+					break;
+				}
+				case SYSTEM:
+				{
+					ChatResDto dto;
+					dto.type = "system";
+					dto.event = req.text;
+					dto.user_name = req.user_name;
+					dto.channel_id = req.channel_id;
+					dtos.entries.push_back(std::move(dto));
+					break;
+				}
+			default:
 				break;
 			}
-			case SYSTEM:
-			{
-				ChatResDto dto;
-				dto.type = "system";
-				dto.event = req.text;
-				dto.user_name = req.user_name;
-				dto.channel_id = req.channel_id;
-				dtos.entries.push_back(std::move(dto));
-				break;
-			}
-		default:
-			break;
+			
 		}
-		
-    }
-	lock.unlock();
+	}
+	
 	
 	if (dtos.entries.empty()) return;
 
@@ -98,10 +99,10 @@ void ChatServer::handle_request(Session& ses, std::unique_ptr<Request> req) {
 
 	ChatReqDto dto(&json_req->root);
 
-	switch_hash(dto.type.c_str()) {
-		case_hash("message"):
-		case_hash("Message"):
-		case_hash("MESSAGE"):
+	switch_hash (dto.type.c_str()) {
+		case_hash ("message"):
+		case_hash ("Message"):
+		case_hash ("MESSAGE"):
 		{
 			const User* from = ses.user;
 			std::string user_name;
@@ -110,7 +111,7 @@ void ChatServer::handle_request(Session& ses, std::unique_ptr<Request> req) {
 
 			MessageReqDto msg_req = { .type = USER, .text = dto.text, .timestamp = dto.timestamp, .user_name = user_name };
 
-			std::unique_lock<std::shared_mutex> lock(mq_mtx);
+			std::unique_lock lock(mq_mtx);
 			mq.push({const_cast<Session*>(&ses), msg_req});
 			break;
 		}

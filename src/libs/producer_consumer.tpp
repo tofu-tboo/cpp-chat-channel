@@ -20,7 +20,7 @@ void ProducerConsumerQueue<T>::push(T item) {
 
 template <typename T>
 bool ProducerConsumerQueue<T>::wait_and_pop(T& out_item) {
-	std::unique_lock<std::mutex> lock(mutex_);
+	std::unique_lock lock(mutex_);
 	cond_.wait(lock, [this]() { return stopped_ || !queue_.empty(); });
 	if (stopped_ && queue_.empty()) {
 		return false;

@@ -45,9 +45,10 @@ class ChannelServer: public ServerBase<User> {
 
 		virtual void free_user(Session& ses) override;
 	func_private:
-		Channel* get_channel(const ch_id_t channel_id);
-        Channel* find_or_create_channel(ch_id_t preferred_id);
+		Channel* get_or_create_ch(const ch_id_t channel_id);
+        Channel* find_pref_or_rand_ch(ch_id_t preferred_id);
 		void check_lobby();
+		void scan_channels_to_freed();
 };
 
 

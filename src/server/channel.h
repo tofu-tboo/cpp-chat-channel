@@ -17,10 +17,10 @@ class ChannelServer; // Forward declaration
 class Channel: public ChatServer {
 	SET_SUPER(ChatServer);
     var_private:
-        ch_id_t channel_id;
+        const ch_id_t channel_id;
         ChannelServer* server; // upward link
 
-		std::atomic<msec64> empty_since;
+		std::atomic<bool> freed_rsv;
     func_public:
         Channel(std::shared_ptr<NetworkService<User>> service, ChannelServer* srv, ch_id_t id, const int max = 256);
         ~Channel();
@@ -34,9 +34,10 @@ class Channel: public ChatServer {
 		void leave_and_logging(Session& ses);
 		void join_and_logging(Session& ses, bool re = true);
 
-		bool ping_pool();
+		bool is_full();
 
-		msec64 get_empty_since() const;
+		bool want_freed() const;
+		void use(); // TODO?: exchange logic
 
     func_protected: // Sequencially called in proc() => no needed mutex
 

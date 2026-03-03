@@ -34,10 +34,10 @@ class LwsService: public NetworkService<T>, virtual public Loggable {
 		using NetworkService<T>::broadcast;
 		using NetworkService<T>::broadcast_group;
 		using NetworkService<T>::close;
-		using NetworkService<T>::del_resv;
+		using NetworkService<T>::del_rsv;
 		using NetworkService<T>::handler;
 		using NetworkService<T>::send;
-		using NetworkService<T>::send_resv;
+		using NetworkService<T>::send_rsv;
 		using NetworkService<T>::serve;
 		using NetworkService<T>::session_group;
 		using NetworkService<T>::setup;
@@ -59,7 +59,7 @@ class LwsService: public NetworkService<T>, virtual public Loggable {
 		ctx* context;
 		ctx_creation_info info;
 
-		bool fl_resv;
+		bool fl_rsv;
 	func_public:
 		LwsService(const port_t port, const size_t tcnt = 1);
 		~LwsService();

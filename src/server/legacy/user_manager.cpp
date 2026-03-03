@@ -7,7 +7,7 @@ std::unordered_map<std::string, int> UserManager::ip_count_map;
 std::shared_mutex UserManager::name_map_mtx;
 
 bool UserManager::get_user_name(const fd_t fd, std::string& out_user_name) {
-    std::shared_lock<std::shared_mutex> lock(name_map_mtx);
+    std::shared_lock lock(name_map_mtx);
     auto it = name_map.find(fd);
     if (it == name_map.end()) {
 		return false;
@@ -17,12 +17,12 @@ bool UserManager::get_user_name(const fd_t fd, std::string& out_user_name) {
 }
 
 void UserManager::set_user_name(const fd_t fd, const std::string& user_name) {
-    std::unique_lock<std::shared_mutex> lock(name_map_mtx);
+    std::unique_lock lock(name_map_mtx);
     name_map[fd] = user_name;
 }
 
 void UserManager::remove_user_name(const fd_t fd) {
-    std::unique_lock<std::shared_mutex> lock(name_map_mtx);
+    std::unique_lock lock(name_map_mtx);
     name_map.erase(fd);
 
     auto it = fd_ip_map.find(fd);
@@ -50,7 +50,7 @@ void UserManager::check_and_register_ip(const fd_t fd, int max_per_ip) {
     }
 
 	ip_str = std::string(ip_cstr);
-	std::unique_lock<std::shared_mutex> lock(name_map_mtx);
+	std::unique_lock lock(name_map_mtx);
     if (ip_count_map[ip_str] >= max_per_ip) {
         throw runtime_errorf(IP_FULL);
     }
