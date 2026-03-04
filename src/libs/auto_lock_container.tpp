@@ -104,9 +104,15 @@ void AutoLockContainer<STL>::clear() requires (!ALC_Traits::HasClear<STL>) {
 
 template <class STL>
 template <typename Key>
-bool AutoLockContainer<STL>::exist(const Key& key) const requires ALC_Traits::HasKey<STL> {
+bool AutoLockContainer<STL>::find(const Key& key) const requires ALC_Traits::HasKey<STL> {
     std::shared_lock lock(mtx);
     return container.find(key) != container.end();
+}
+
+template <class STL>
+bool AutoLockContainer<STL>::find(const value_type& item) const requires (!ALC_Traits::HasKey<STL> && ALC_Traits::HasIterators<STL>) {
+    std::shared_lock lock(mtx);
+    return std::find(container.begin(), container.end(), item) != container.end();
 }
 
 // 6. Task

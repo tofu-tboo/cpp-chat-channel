@@ -12,7 +12,7 @@ ProducerConsumerQueue<T>::~ProducerConsumerQueue() {
 template <typename T>
 void ProducerConsumerQueue<T>::push(T item) {
 	{
-		std::lock_guard<std::mutex> lock(mutex_);
+		std::lock_guard lock(mutex_);
 		queue_.push(std::move(item));
 	}
 	cond_.notify_one();
@@ -32,7 +32,7 @@ bool ProducerConsumerQueue<T>::wait_and_pop(T& out_item) {
 
 template <typename T>
 bool ProducerConsumerQueue<T>::try_pop(T& out_item) {
-	std::lock_guard<std::mutex> lock(mutex_);
+	std::lock_guard lock(mutex_);
 	if (queue_.empty()) {
 		return false;
 	}
@@ -43,7 +43,7 @@ bool ProducerConsumerQueue<T>::try_pop(T& out_item) {
 
 template <typename T>
 std::queue<T> ProducerConsumerQueue<T>::pop_all() {
-	std::lock_guard<std::mutex> lock(mutex_);
+	std::lock_guard lock(mutex_);
 	std::queue<T> local_q;
 	std::swap(queue_, local_q);
 	return local_q;
@@ -51,20 +51,20 @@ std::queue<T> ProducerConsumerQueue<T>::pop_all() {
 
 template <typename T>
 bool ProducerConsumerQueue<T>::empty() const {
-	std::lock_guard<std::mutex> lock(mutex_);
+	std::lock_guard lock(mutex_);
 	return queue_.empty();
 }
 
 template <typename T>
 size_t ProducerConsumerQueue<T>::size() const {
-	std::lock_guard<std::mutex> lock(mutex_);
+	std::lock_guard lock(mutex_);
 	return queue_.size();
 }
 
 template <typename T>
 void ProducerConsumerQueue<T>::stop() {
 	{
-		std::lock_guard<std::mutex> lock(mutex_);
+		std::lock_guard lock(mutex_);
 		stopped_ = true;
 	}
 	cond_.notify_all();

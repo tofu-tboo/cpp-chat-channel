@@ -78,7 +78,7 @@ void ConnectionTracker::polling(const msec to) {
 }
 
 void ConnectionTracker::add_client(const int fd) {
-    std::lock_guard<std::mutex> lock(mtx);
+    std::lock_guard lock(mtx);
     if (fd == FD_ERR) {
         throw std::runtime_error("Invalid client fd.");
     } else if (efd == FD_ERR) {
@@ -99,7 +99,7 @@ void ConnectionTracker::add_client(const int fd) {
     clients.insert(fd);
 }
 void ConnectionTracker::delete_client(const int fd) {
-    std::lock_guard<std::mutex> lock(mtx);
+    std::lock_guard lock(mtx);
     if (fd == FD_ERR) {
         throw std::runtime_error("Invalid client fd.");
     } else if (efd == FD_ERR) {
@@ -123,12 +123,12 @@ const int ConnectionTracker::get_evcnt() const {
 }
 
 std::unordered_set<fd_t> ConnectionTracker::get_clients() const {
-    std::lock_guard<std::mutex> lock(mtx);
+    std::lock_guard lock(mtx);
     return clients;
 }
 
 bool ConnectionTracker::is_full() const {
-	std::lock_guard<std::mutex> lock(mtx);
+	std::lock_guard lock(mtx);
 	return clients.size() >= max_fd;
 }
 
@@ -137,7 +137,7 @@ int ConnectionTracker::get_max_fd() const {
 }
 
 size_t ConnectionTracker::get_client_count() const {
-	std::lock_guard<std::mutex> lock(mtx);
+	std::lock_guard lock(mtx);
 	return clients.size();
 }
 

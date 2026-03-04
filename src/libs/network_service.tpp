@@ -80,6 +80,11 @@ void NetworkService<T>::register_handler(Session* ses, SessionEvHandler<T>* hand
 	ses->secret->handler = handler;
 }
 
+template <typename T>
+bool NetworkService<T>::is_reserved_to_close(Session* ses) const {
+	return del_rsv.find(ses);
+}
+
 #pragma endregion
 #pragma region PRIVATE_FUNC
 template <typename T>

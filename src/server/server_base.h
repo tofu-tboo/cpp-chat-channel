@@ -54,12 +54,13 @@ class ServerBase: public SessionEvHandler<U>, virtual public Loggable {
             TS_LOGIC, 		// 로직: 메시지 처리, 브로드캐스트, 삭제
             TS_COUNT
         };
+
 	var_protected:
         const int branch_id; // branch's id
 		std::shared_ptr<NetworkService<U>> service;
 		std::unique_ptr<IMsgTranslator> msg_translator;
 
-        std::unordered_set<Session*> nxt_close;
+        std::unordered_map<Session*, std::string> nxt_close;
 
 		std::shared_mutex nc_mtx;
 
@@ -87,7 +88,7 @@ class ServerBase: public SessionEvHandler<U>, virtual public Loggable {
 		virtual void handle_request(Session& ses, std::unique_ptr<Request> req) = 0;
 
 		virtual void free_user(Session& ses);
-		void rsv_close(Session* ses);
+		void rsv_close(Session* ses, const std::string& msg = "");
 };
 
 #include "server_base.tpp"

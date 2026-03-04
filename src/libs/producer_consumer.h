@@ -10,6 +10,8 @@
 /*
 Thread-safe Producer-Consumer Queue
 Integrates synchronization logic (mutex, condition_variable) into a single class.
+
+MPMC queue
 */
 template <typename T>
 class ProducerConsumerQueue {

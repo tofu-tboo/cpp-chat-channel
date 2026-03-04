@@ -2,7 +2,7 @@
 #include <vector>
 
 void CronWorker::schedule_at(const UnivKey& key, msec64 exec_time, std::function<void()> func) {
-	std::lock_guard<std::mutex> lock(mtx);
+	std::lock_guard lock(mtx);
 	// Remove existing task with the same key to ensure uniqueness/update
 	for (auto it = tasks.begin(); it != tasks.end(); ++it) {
 		if (it->second.id == key) {
@@ -15,7 +15,7 @@ void CronWorker::schedule_at(const UnivKey& key, msec64 exec_time, std::function
 
 UnivKey CronWorker::schedule_at(msec64 exec_time, std::function<void()> func) {
 	UnivKey id = next_task_id++;
-	std::lock_guard<std::mutex> lock(mtx);
+	std::lock_guard lock(mtx);
 	tasks.emplace(exec_time, CronTask{id, std::move(func), 0});
 	return id;
 }
@@ -30,7 +30,7 @@ UnivKey CronWorker::schedule_in(msec64 delay, std::function<void()> func) {
 
 void CronWorker::schedule_every(const UnivKey& key, msec64 interval, std::function<void()> func, bool run_immediately) {
 	msec64 first_exec_time = now_ms() + (run_immediately ? 0 : interval);
-	std::lock_guard<std::mutex> lock(mtx);
+	std::lock_guard lock(mtx);
 	for (auto it = tasks.begin(); it != tasks.end(); ++it) {
 		if (it->second.id == key) {
 			tasks.erase(it);
@@ -43,13 +43,13 @@ void CronWorker::schedule_every(const UnivKey& key, msec64 interval, std::functi
 UnivKey CronWorker::schedule_every(msec64 interval, std::function<void()> func, bool run_immediately) {
 	UnivKey id = next_task_id++;
 	msec64 first_exec_time = now_ms() + (run_immediately ? 0 : interval);
-	std::lock_guard<std::mutex> lock(mtx);
+	std::lock_guard lock(mtx);
 	tasks.emplace(first_exec_time, CronTask{id, std::move(func), interval});
 	return id;
 }
 
 void CronWorker::cancel(const UnivKey& id) {
-	std::lock_guard<std::mutex> lock(mtx);
+	std::lock_guard lock(mtx);
 	for (auto it = tasks.begin(); it != tasks.end(); ++it) {
 		if (it->second.id == id) {
 			tasks.erase(it);
@@ -63,7 +63,7 @@ void CronWorker::run_pending() {
 	msec64 now = now_ms();
 
 	{
-		std::lock_guard<std::mutex> lock(mtx);
+		std::lock_guard lock(mtx);
 		// Find all tasks that are due
 		auto end_it = tasks.upper_bound(now);
 		for (auto it = tasks.begin(); it != end_it; ++it) {
@@ -84,7 +84,7 @@ void CronWorker::run_pending() {
 		}
 		// Reschedule if it's a periodic task
 		if (task.interval > 0) {
-			std::lock_guard<std::mutex> lock(mtx);
+			std::lock_guard lock(mtx);
 			tasks.emplace(now + task.interval, task);
 		}
 	}

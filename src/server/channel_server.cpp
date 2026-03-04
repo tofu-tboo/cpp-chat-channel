@@ -108,18 +108,16 @@ void ChannelServer::handle_request(Session& ses, std::unique_ptr<Request> req) {
 
 #pragma region PRIVATE_FUNC
 Channel* ChannelServer::get_or_create_ch(const ch_id_t channel_id) {
-	{
-		std::shared_lock find_ch(chs_mtx);
-		std::map<ch_id_t, Channel*>::iterator it = channels.find(channel_id);
-		if (it != channels.end()) {
-			Channel* ch = it->second;
-			if (ch->want_freed())
-				ch->use();
-			return ch;
-		}
-	}
-
 	std::unique_lock lock(chs_mtx);
+	
+	std::map<ch_id_t, Channel*>::iterator it = channels.find(channel_id);
+	if (it != channels.end()) {
+		Channel* ch = it->second;
+		if (ch->want_freed())
+			ch->use();
+		return ch;
+	}
+	// Split lock as 2 (shared & unique) => there is likely to make same channel simutaneously. => Dangling ptr
 	channels[channel_id] = channel_factory->create(this, channel_id);
 	channels[channel_id]->init();
 	log(_L_CYAN "Channel %u" _L_DEFAULT " created.", channel_id);
@@ -130,7 +128,7 @@ Channel* ChannelServer::find_pref_or_rand_ch(ch_id_t preferred_id) {
 	if (preferred_id != -1) {
 		Channel* target_ch = get_or_create_ch(preferred_id);
 
-		if (target_ch->is_full()) {
+		if (!target_ch->is_full()) {
 			return target_ch;
 		}
 	}
@@ -159,8 +157,9 @@ void ChannelServer::check_lobby() {
 			next[session] = t;
 		} else {
 			log(_L_YELLOW "Lobby timeout: " _L_CYAN "user %p", session->user);
-			rsv_close(session);
-			service->send(session, std::string("Lobby timeout."));
+			rsv_close(session, R"({"type":"error","message":"Lobby timeout."})");
+			// service->close(session, R"({"type":"error","message":"Lobby timeout."})");
+			// service->send(session, std::string("Lobby timeout."));
 		}
 	}
 

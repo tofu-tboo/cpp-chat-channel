@@ -47,8 +47,8 @@ void Channel::leave_and_logging(Session& ses) {
 
 
 	if (user->name) sys_msg.user_name = user->name;
-	else if (ses.group != INT_MIN) {
-		rsv_close(&ses);
+	else {
+		rsv_close(&ses, R"({"type":"error","message":"Missing name."})");
 		return;
 	}
 

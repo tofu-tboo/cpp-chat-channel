@@ -19,11 +19,7 @@ bool ServerBase<U>::init() {
 		service->setup(this);
 
 		cron_worker.schedule_every("session deletion", 1000, [this]() {
-			// Cleanup Qs
 			resolve_close();
-			// Deletion sessions
-			std::unique_lock lock(nc_mtx);
-			nxt_close.clear();
 		});
 
 		return true;
@@ -61,10 +57,10 @@ void ServerBase<U>::stop() {
 template <typename U>
 void ServerBase<U>::resolve_close() {
 	std::shared_lock lock(nc_mtx);
-    for (Session* ses : nxt_close) {
-		service->close(ses, std::string("Server closed connection."));
-        // cl_session(ses);
+    for (auto [ses, msg] : nxt_close) {
+		service->close(ses, msg);
     }
+	nxt_close.clear();
 }
 
 template <typename U>
@@ -107,8 +103,8 @@ template <typename U>
 void ServerBase<U>::free_user(Session& ses) {}
 
 template <typename U>
-void ServerBase<U>::rsv_close(Session* ses) {
+void ServerBase<U>::rsv_close(Session* ses, const std::string& msg) {
 	std::unique_lock lock(nc_mtx);
-	nxt_close.insert(ses);
+	nxt_close.insert({ses, msg});
 }
 #pragma endregion

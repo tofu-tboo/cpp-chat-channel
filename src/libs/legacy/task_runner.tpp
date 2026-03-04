@@ -5,7 +5,7 @@
 template <typename Fn>
 template <typename Op>
 void TaskRunner<Fn>::exec_locked(unsigned int idx, Op&& op) {
-    std::lock_guard<std::mutex> lock(mtx);
+    std::lock_guard lock(mtx);
     op(session_at(idx));
 }
 
@@ -38,7 +38,7 @@ void TaskRunner<Fn>::popb(const unsigned int which) {
 
 template <typename Fn>
 void TaskRunner<Fn>::new_session(const unsigned int cnt) {
-    std::lock_guard<std::mutex> lock(mtx);
+    std::lock_guard lock(mtx);
     for (unsigned int i = 0; i < cnt; i++) {
         tasks.emplace_back();
     }
@@ -46,13 +46,13 @@ void TaskRunner<Fn>::new_session(const unsigned int cnt) {
 
 template <typename Fn>
 void TaskRunner<Fn>::clear() {
-    std::lock_guard<std::mutex> lock(mtx);
+    std::lock_guard lock(mtx);
     tasks.clear();
 }
 
 template <typename Fn>
 void TaskRunner<Fn>::run() {
-    std::lock_guard<std::mutex> lock(mtx);
+    std::lock_guard lock(mtx);
     for (size_t i = 0; i < tasks.size(); ++i) {
         auto& session = tasks[i];
         for (auto it = session.begin(); it != session.end();) {

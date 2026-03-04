@@ -121,6 +121,7 @@ class NetworkService: virtual public Loggable {
 		virtual void join();
 
 		bool is_running() const;
+		bool is_reserved_to_close(Session* ses) const;
 	func_protected:
 		virtual void accumulate(Session* ses, const unsigned char* data, size_t len) = 0;
 
