@@ -39,6 +39,11 @@ void ServerBase<U>::proc() {
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
 	});
+	while (service->is_running()) {
+		cron_worker.run_pending();
+		// MPMC Q
+		cron_worker.wait_for_next_task();
+	}
 	service->join(); // Wait for I/O threads to finish
 	if (background.joinable()) {
 		background.join(); // Then, wait for the cron worker thread to finish
@@ -104,7 +109,7 @@ void ServerBase<U>::free_user(Session& ses) {}
 
 template <typename U>
 void ServerBase<U>::rsv_close(Session* ses, const std::string& msg) {
-	std::unique_lock lock(nc_mtx);
+	std::lock_guard lock(nc_mtx);
 	nxt_close.insert({ses, msg});
 }
 #pragma endregion

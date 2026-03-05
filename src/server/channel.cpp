@@ -26,7 +26,7 @@ void Channel::leave(Session& ses, const MessageReqDto& msg) {
 
 	// service->change_session_group(&ses, INT_MIN);
 
-	std::unique_lock lock(mq_mtx);
+	std::lock_guard lock(mq_mtx);
 	mq.push({&ses, msg});
 }
 
@@ -37,7 +37,7 @@ void Channel::join(Session& ses, const MessageReqDto& msg) {
 	service->change_session_group(&ses, channel_id);
 	service->register_handler(&ses, this);
 
-	std::unique_lock lock(mq_mtx);
+	std::lock_guard lock(mq_mtx);
 	mq.push({&ses, msg});
 }
 
@@ -160,7 +160,7 @@ void Channel::free_user(Session& ses) {
 	service->change_session_group(&ses, INT_MIN);
 	service->register_handler(&ses, nullptr);
 
-	std::unique_lock push(mq_mtx);
+	std::lock_guard push(mq_mtx);
 	mq.push({&ses, msg});
 }
 

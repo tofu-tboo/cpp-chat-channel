@@ -20,13 +20,26 @@ void ProducerConsumerQueue<T>::push(T item) {
 
 template <typename T>
 bool ProducerConsumerQueue<T>::wait_and_pop(T& out_item) {
-	std::unique_lock lock(mutex_);
+	std::lock_guard lock(mutex_);
 	cond_.wait(lock, [this]() { return stopped_ || !queue_.empty(); });
 	if (stopped_ && queue_.empty()) {
 		return false;
 	}
 	out_item = std::move(queue_.front());
 	queue_.pop();
+	return true;
+}
+
+template <typename T>
+bool ProducerConsumerQueue<T>::wait_and_pop_all(std::queue<T>& out_item) {
+	std::lock_guard lock(mutex_);
+	cond_.wait(lock, [this]() {
+		return stopped_ || !queue_.empty();
+	});
+	if (stopped_ && queue_.empty()) {
+		return false;
+	}
+	std::swap(queue_, out_item);
 	return true;
 }
 

@@ -16,7 +16,7 @@ bool ChatServer::init() {
 		cron_worker.schedule_every("broadcast", 50, [this]() {
 			resolve_timestamps();
 			resolve_broadcast();
-			std::unique_lock lock(cm_mtx);
+			std::lock_guard lock(cm_mtx);
 			cur_msgs.clear();
 		});
 		return true;
@@ -29,7 +29,7 @@ bool ChatServer::init() {
 
 void ChatServer::resolve_timestamps() {
 	std::unique_lock lock(mq_mtx);
-	std::unique_lock lock2(cm_mtx);
+	std::lock_guard lock2(cm_mtx);
     auto local_q = mq.pop_all();
 	lock.unlock();
 
@@ -111,7 +111,7 @@ void ChatServer::handle_request(Session& ses, std::unique_ptr<Request> req) {
 
 			MessageReqDto msg_req = { .type = USER, .text = dto.text, .timestamp = dto.timestamp, .user_name = user_name };
 
-			std::unique_lock lock(mq_mtx);
+			std::lock_guard lock(mq_mtx);
 			mq.push({const_cast<Session*>(&ses), msg_req});
 			break;
 		}

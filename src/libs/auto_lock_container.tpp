@@ -5,7 +5,7 @@
 // 1. Add
 template <class STL>
 void AutoLockContainer<STL>::add(const value_type& item) requires (ALC_Traits::HasPushBack<STL> || ALC_Traits::HasPush<STL> || (ALC_Traits::HasKey<STL> && !ALC_Traits::HasMapped<STL>)) {
-    std::unique_lock lock(mtx);
+    std::lock_guard lock(mtx);
     if constexpr (ALC_Traits::HasPushBack<STL>) container.push_back(item);
     else if constexpr (ALC_Traits::HasPush<STL>) container.push(item);
     else container.insert(item);
@@ -14,7 +14,7 @@ void AutoLockContainer<STL>::add(const value_type& item) requires (ALC_Traits::H
 template <class STL>
 template <typename Key, typename Value>
 void AutoLockContainer<STL>::add(const Key& key, const Value& value) requires ALC_Traits::HasMapped<STL> && std::convertible_to<Value, typename STL::mapped_type> {
-    std::unique_lock lock(mtx);
+    std::lock_guard lock(mtx);
     if constexpr (requires { container[key] = value; }) container[key] = value;
     else container.insert({key, value});
 }
@@ -26,7 +26,7 @@ void AutoLockContainer<STL>::add(const Key& key, const SubValue& subval)
             && (ALC_Traits::MappedHasPush<STL> || ALC_Traits::MappedHasPushBack<STL> || ALC_Traits::MappedHasInsert<STL>)
             && (!std::convertible_to<SubValue, typename STL::mapped_type>) 
 {
-    std::unique_lock lock(mtx);
+    std::lock_guard lock(mtx);
     if constexpr (ALC_Traits::MappedHasPush<STL>) container[key].push(subval);
     else if constexpr (ALC_Traits::MappedHasPushBack<STL>) container[key].push_back(subval);
     else container[key].insert(subval);
@@ -36,13 +36,13 @@ void AutoLockContainer<STL>::add(const Key& key, const SubValue& subval)
 template <class STL>
 template <typename Key>
 bool AutoLockContainer<STL>::del(const Key& key) requires ALC_Traits::HasKey<STL> {
-    std::unique_lock lock(mtx);
+    std::lock_guard lock(mtx);
     return container.erase(key) > 0;
 }
 
 template <class STL>
 bool AutoLockContainer<STL>::del(value_type& out_item) requires (ALC_Traits::HasFront<STL> || ALC_Traits::HasTop<STL>) {
-    std::unique_lock lock(mtx);
+    std::lock_guard lock(mtx);
     if (container.empty()) return false;
     
     if constexpr (ALC_Traits::HasFront<STL>) out_item = container.front();
@@ -92,13 +92,13 @@ bool AutoLockContainer<STL>::empty() const {
 
 template <class STL>
 void AutoLockContainer<STL>::clear() requires ALC_Traits::HasClear<STL> {
-    std::unique_lock lock(mtx);
+    std::lock_guard lock(mtx);
     container.clear();
 }
 
 template <class STL>
 void AutoLockContainer<STL>::clear() requires (!ALC_Traits::HasClear<STL>) {
-    std::unique_lock lock(mtx);
+    std::lock_guard lock(mtx);
     container = STL(); // Re-assign empty container for adapters (queue, stack)
 }
 
@@ -119,13 +119,13 @@ bool AutoLockContainer<STL>::find(const value_type& item) const requires (!ALC_T
 template <class STL>
 template <typename Func>
 void AutoLockContainer<STL>::task(Func&& func) {
-    std::unique_lock lock(mtx);
+    std::lock_guard lock(mtx);
     func(container);
 }
 
 template <class STL>
 STL AutoLockContainer<STL>::move() {
-    std::unique_lock lock(mtx);
+    std::lock_guard lock(mtx);
     STL temp;
     std::swap(container, temp);
     return temp;

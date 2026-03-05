@@ -37,6 +37,7 @@ public:
     // 큐에 데이터가 들어올 때까지 대기합니다.
     // stop()이 호출되어 종료되거나 큐가 비어있으면 false를 반환합니다.
     bool wait_and_pop(T& out_item);
+    bool wait_and_pop_all(std::queue<T>& out_item);
 
     // Consumer: 데이터 꺼내기 (Non-blocking)
     // 큐가 비어있으면 즉시 false를 반환합니다.

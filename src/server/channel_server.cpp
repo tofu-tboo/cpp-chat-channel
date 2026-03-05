@@ -55,13 +55,13 @@ void ChannelServer::free_user(Session& ses) {
 	if (user->name) free(user->name);
 	user->name = nullptr;
 
-	std::unique_lock erase(la_mtx);
+	std::lock_guard erase(la_mtx);
 	last_act.erase(&ses);
 }
 
 void ChannelServer::on_accept(Session& ses) {
 	super::on_accept(ses);
-	std::unique_lock lock(la_mtx);
+	std::lock_guard lock(la_mtx);
 	last_act[&ses] = now_ms();
 }
 
@@ -84,7 +84,7 @@ void ChannelServer::handle_request(Session& ses, std::unique_ptr<Request> req) {
 				// 2. Uncheck session activity
 				{
 					// ** DEPENDENT ON check_lobby() **
-					std::unique_lock uncheck_activity(la_mtx);
+					std::lock_guard uncheck_activity(la_mtx);
 					std::shared_lock check_close_rsv(nc_mtx);
 					last_act.erase(&ses);
 					if (nxt_close.find(&ses) != nxt_close.end())
@@ -108,7 +108,7 @@ void ChannelServer::handle_request(Session& ses, std::unique_ptr<Request> req) {
 
 #pragma region PRIVATE_FUNC
 Channel* ChannelServer::get_or_create_ch(const ch_id_t channel_id) {
-	std::unique_lock lock(chs_mtx);
+	std::lock_guard lock(chs_mtx);
 	
 	std::map<ch_id_t, Channel*>::iterator it = channels.find(channel_id);
 	if (it != channels.end()) {
@@ -133,7 +133,7 @@ Channel* ChannelServer::find_pref_or_rand_ch(ch_id_t preferred_id) {
 		}
 	}
     
-	std::unique_lock lock(chs_mtx);
+	std::lock_guard lock(chs_mtx);
 	ch_id_t expected = 0;
 	for (auto [id, _]: channels) {
 		if (id != expected) {
@@ -150,7 +150,7 @@ void ChannelServer::check_lobby() {
 	auto now = now_ms();
 	std::unordered_map<Session*, msec64> next;
 
-	std::unique_lock lock(la_mtx);
+	std::lock_guard lock(la_mtx);
 	for (const auto& [session, t] : last_act) {
 		auto elapsed = now - t;
 		if (elapsed < 5000) {
@@ -167,7 +167,7 @@ void ChannelServer::check_lobby() {
 }
 
 void ChannelServer::scan_channels_to_freed() {
-	std::unique_lock lock(chs_mtx);
+	std::lock_guard lock(chs_mtx);
 	for (std::map<ch_id_t, Channel*>::iterator it = channels.begin(); it != channels.end();) {
 		Channel* ch = it->second;
 		if (channel->want_freed()) {

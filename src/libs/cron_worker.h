@@ -4,6 +4,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <condition_variable>
 #include <atomic>
 #include <cstdint>
 
@@ -21,9 +22,11 @@ class CronWorker {
 
 	var_private:
 		std::multimap<msec64, CronTask> tasks; // Key: next execution time
-		std::mutex mtx;
+		mutable std::mutex mtx;
 		std::atomic<uint64_t> next_task_id{1};
-
+		
+		std::condition_variable wait_cv;
+		std::atomic<bool> scheded_in_waiting;
 	func_public:
 		/**
 		 * @brief Schedule a task to run once at a specific time.
@@ -64,6 +67,16 @@ class CronWorker {
 		 * This should be called periodically (e.g., in a dedicated thread loop).
 		 */
 		void run_pending();
+
+		/**
+		 * @brief Get the duration until the next task is due.
+		 * @return Duration in milliseconds. Returns a very large value if no tasks are scheduled.
+		 */
+		msec64 get_next_tick_duration() const;
+
+		bool wait_for_next_task();
+	func_private:
+		void notify();
 };
 
 #endif

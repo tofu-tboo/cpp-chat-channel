@@ -64,55 +64,55 @@ class KeyList {
 		std::shared_mutex& get_mutex() const { return mtx; }
 
 		void push_back(const UnivKey& name, const T& value) {
-			std::unique_lock lock(mtx);
+			std::lock_guard lock(mtx);
 			if (map.find(name) != map.end()) throw std::runtime_error("Key already exists.");
 			list.push_back({name, value});
 			map[name] = std::prev(list.end());
 		}
 
 		void push_back(const UnivKey& name, T&& value) {
-			std::unique_lock lock(mtx);
+			std::lock_guard lock(mtx);
 			if (map.find(name) != map.end()) throw std::runtime_error("Key already exists.");
 			list.push_back({name, std::move(value)});
 			map[name] = std::prev(list.end());
 		}
 		
 		void push_back(const T& value) {
-			std::unique_lock lock(mtx);
+			std::lock_guard lock(mtx);
 			list.push_back({std::nullopt, value});
 		}
 
 		void push_back(T&& value) {
-			std::unique_lock lock(mtx);
+			std::lock_guard lock(mtx);
 			list.push_back({std::nullopt, std::move(value)});
 		}
 
 		void push_front(const UnivKey& name, const T& value) {
-			std::unique_lock lock(mtx);
+			std::lock_guard lock(mtx);
 			if (map.find(name) != map.end()) throw std::runtime_error("Key already exists.");
 			list.push_front({name, value});
 			map[name] = list.begin();
 		}
 
 		void push_front(const UnivKey& name, T&& value) {
-			std::unique_lock lock(mtx);
+			std::lock_guard lock(mtx);
 			if (map.find(name) != map.end()) throw std::runtime_error("Key already exists.");
 			list.push_front({name, std::move(value)});
 			map[name] = list.begin();
 		}
 
 		void push_front(const T& value) {
-			std::unique_lock lock(mtx);
+			std::lock_guard lock(mtx);
 			list.push_front({std::nullopt, value});
 		}
 
 		void push_front(T&& value) {
-			std::unique_lock lock(mtx);
+			std::lock_guard lock(mtx);
 			list.push_front({std::nullopt, std::move(value)});
 		}
 
 		void pop_back() {
-			std::unique_lock lock(mtx);
+			std::lock_guard lock(mtx);
 			if (list.empty()) return;
 			if (list.back().name.has_value()) {
 				map.erase(list.back().name.value());
@@ -121,7 +121,7 @@ class KeyList {
 		}
 
 		void pop_front() {
-			std::unique_lock lock(mtx);
+			std::lock_guard lock(mtx);
 			if (list.empty()) return;
 			if (list.front().name.has_value()) {
 				map.erase(list.front().name.value());
@@ -130,7 +130,7 @@ class KeyList {
 		}
 
 		void remove(const UnivKey& name) {
-			std::unique_lock lock(mtx);
+			std::lock_guard lock(mtx);
 			auto it = map.find(name);
 			if (it != map.end()) {
 				list.erase(it->second);

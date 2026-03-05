@@ -1,5 +1,6 @@
 #include "cron_worker.h"
 #include <vector>
+#include <limits>
 
 void CronWorker::schedule_at(const UnivKey& key, msec64 exec_time, std::function<void()> func) {
 	std::lock_guard lock(mtx);
@@ -11,12 +12,14 @@ void CronWorker::schedule_at(const UnivKey& key, msec64 exec_time, std::function
 		}
 	}
 	tasks.emplace(exec_time, CronTask{key, std::move(func), 0});
+	notify();
 }
 
 UnivKey CronWorker::schedule_at(msec64 exec_time, std::function<void()> func) {
 	UnivKey id = next_task_id++;
 	std::lock_guard lock(mtx);
 	tasks.emplace(exec_time, CronTask{id, std::move(func), 0});
+	notify();
 	return id;
 }
 
@@ -38,6 +41,7 @@ void CronWorker::schedule_every(const UnivKey& key, msec64 interval, std::functi
 		}
 	}
 	tasks.emplace(first_exec_time, CronTask{key, std::move(func), interval});
+	notify();
 }
 
 UnivKey CronWorker::schedule_every(msec64 interval, std::function<void()> func, bool run_immediately) {
@@ -45,6 +49,7 @@ UnivKey CronWorker::schedule_every(msec64 interval, std::function<void()> func, 
 	msec64 first_exec_time = now_ms() + (run_immediately ? 0 : interval);
 	std::lock_guard lock(mtx);
 	tasks.emplace(first_exec_time, CronTask{id, std::move(func), interval});
+	notify();
 	return id;
 }
 
@@ -56,6 +61,33 @@ void CronWorker::cancel(const UnivKey& id) {
 			return;
 		}
 	}
+}
+
+msec64 CronWorker::get_next_tick_duration() const {
+	std::lock_guard<std::mutex> lock(mtx);
+	if (tasks.empty()) {
+		// No tasks, so we can wait for a very long time.
+		return std::numeric_limits<msec64>::max();
+	}
+
+	msec64 next_exec_time = tasks.begin()->first;
+	msec64 now = now_ms();
+
+	if (next_exec_time <= now) {
+		// The next task is already due or overdue.
+		return 0;
+	}
+
+	return next_exec_time - now;
+}
+
+bool CronWorker::wait_for_next_task() {
+	std::unique_lock lock(mtx);
+	while (true) 
+		if (wait_cv.wait_for(lock, std::chrono::milliseconds(get_next_tick_duration()), [this]() {
+			return scheded_in_waiting.exchange(false);
+		}))
+			return true;
 }
 
 void CronWorker::run_pending() {
@@ -88,4 +120,9 @@ void CronWorker::run_pending() {
 			tasks.emplace(now + task.interval, task);
 		}
 	}
+}
+
+void CronWorker::notify() {
+	scheded_in_waiting = true;
+	wait_cv.notify_one();
 }
