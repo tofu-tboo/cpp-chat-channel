@@ -78,6 +78,7 @@ public:
 
     // Move internal container out (Reset)
     STL move();
+    STL copy() const;
 };
 
 #include "auto_lock_container.tpp"

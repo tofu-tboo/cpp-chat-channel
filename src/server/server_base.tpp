@@ -17,11 +17,9 @@ template <typename U>
 bool ServerBase<U>::init() {
 	if (service) {
 		service->setup(this);
-
 		cron_worker.schedule_every("session deletion", 1000, [this]() {
 			resolve_close();
 		});
-
 		return true;
 	} 
 	return false;
@@ -33,11 +31,13 @@ ServerBase<U>::~ServerBase() {}
 template <typename U>
 void ServerBase<U>::proc() {
    	service->start();
-	std::thread background([this]() {
+	
+	background = std::thread([this]() {
 		dlog("Cron worker thread started.");
 		while (service->is_running()) {
 			cron_worker.run_pending();
-			cron_worker.wait_for_next_task();
+			if (!cron_worker.wait_for_next_task())
+				break;
 		}
 		dlog("Cron worker thread finished.");
 	});
@@ -49,14 +49,19 @@ void ServerBase<U>::proc() {
 				consume_report(rep);
 			}
 		} else {
-			// when MPMC stopped
+			if (service->is_running()) {
+				service->stop();
+			}
+			if (!service->is_running()) {
+				dlog("Report queue is stopped and service is not running. Exiting main loop.");
+			}
 		}
 	}
 	dlog("Main proc loop finished. Joining threads...");
-	service->join(); // Wait for I/O threads to finish
+	service->join();
 	dlog("Network service threads joined.");
 	if (background.joinable()) {
-		background.join(); // Then, wait for the cron worker thread to finish
+		background.join();
 	}
 	dlog("Cron worker thread joined. Shutdown complete.");
 }
@@ -71,7 +76,7 @@ void ServerBase<U>::stop() {
 	dlog("Stopping report queue...");
 	report_q.stop();
 	dlog("Notifying cron worker to stop...");
-	cron_worker.schedule_in(0, [](){}); // Wake up cron worker thread
+	cron_worker.stop();
 }
 
 template <typename U>

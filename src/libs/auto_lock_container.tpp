@@ -130,3 +130,9 @@ STL AutoLockContainer<STL>::move() {
     std::swap(container, temp);
     return temp;
 }
+
+template <class STL>
+STL AutoLockContainer<STL>::copy() const {
+    std::shared_lock lock(mtx);
+    return container;
+}

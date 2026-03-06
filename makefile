@@ -2,7 +2,7 @@
 #  Configuration
 # =============================================================================
 # Compiler and tools
-CXX      := g++
+CXX      := clang++
 CXX_WIN  := x86_64-w64-mingw32-g++
 PYTHON   := python3
 

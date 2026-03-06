@@ -100,39 +100,35 @@ void LwsService<T>::send(Session* ses, const unsigned char* data, size_t len) {
 
 template <typename T>
 void LwsService<T>::broadcast(const unsigned char* data, size_t len) {
-	session_group.task([this, data, len](auto& ses_group) {
-		for (auto& [group, sessions] : ses_group) {
-			for (auto ses : sessions) {
-				LwsSession* extra = static_cast<LwsSession*>(ses->secret->extra);
-				lws* wsi = extra->wsi;
-				if (!wsi) {
-					elog("Null wsi");
-					return;
-				}
-
-				accumulate(ses, data, len);
-				lws_callback_on_writable(wsi);
-			}
-		}
-	});
-	flush();
-}
-
-template <typename T>
-void LwsService<T>::broadcast_group(int group, const unsigned char* data, size_t len) {
-	session_group.task([this, group, data, len](auto& ses_group) {
-		for (auto ses: ses_group[group]) {
+	std::map<int, std::set<Session*>> sg = session_group.copy();
+	for (auto& [group, sessions] : sg) {
+		for (auto ses : sessions) {
 			LwsSession* extra = static_cast<LwsSession*>(ses->secret->extra);
 			lws* wsi = extra->wsi;
 			if (!wsi) {
 				elog("Null wsi");
 				return;
 			}
-
 			accumulate(ses, data, len);
 			lws_callback_on_writable(wsi);
 		}
-	});
+	}
+	flush();
+}
+
+template <typename T>
+void LwsService<T>::broadcast_group(int group, const unsigned char* data, size_t len) {
+	std::map<int, std::set<Session*>> sg = session_group.copy();
+	for (auto ses: sg[group]) {
+		LwsSession* extra = static_cast<LwsSession*>(ses->secret->extra);
+		lws* wsi = extra->wsi;
+		if (!wsi) {
+			elog("Null wsi");
+			return;
+		}
+		accumulate(ses, data, len);
+		lws_callback_on_writable(wsi);
+	}
 	flush();
 }
 
@@ -346,6 +342,8 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 				rsv_map[ses].pop();
 				more = !rsv_map[ses].empty();
 			});
+
+			if (packet.empty()) return 0;
 				
 			int n;
 			lws_write_protocol flag;
@@ -391,7 +389,6 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 			dels = instance->del_rsv.move();
 			
 			if (!dels.empty()) {
-				instance->log(_L_YELLOW "Close asynchronously: Sessions * %d.", (int)dels.size());
 				for (auto [ses_to_close, msg]: dels) {
 					LwsSession* extra = static_cast<LwsSession*>(ses_to_close->secret->extra);
 					lws* wsi_to_close = extra->wsi;
@@ -434,15 +431,14 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 
 	int ret = 0;
 	if (ses && ses->secret) {
-		handler = ses->secret->handler;
-		ret = handler->callback({ .ses = ses, .event = event, .in = static_cast<unsigned char*>(in) + in_offset, .len = len - in_offset });
+		if (instance->is_running()) { // sigint handling
+			handler = ses->secret->handler;
+			if (handler)
+				ret = handler->callback({ .ses = ses, .event = event, .in = static_cast<unsigned char*>(in) + in_offset, .len = len - in_offset });
+		}
 
 		// Deferred cleanup
 		if (event == NS_EV::CLOSE) {
-			LwsSession* extra = static_cast<LwsSession*>(ses->secret->extra);
-			if (extra)
-				delete extra;
-			
 			if (!ses->secret->ip.empty()) {
 				instance->ip_conn_map.task([ip = ses->secret->ip](auto& map) {
 					if (map.find(ip) != map.end()) {
@@ -451,7 +447,6 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 					}
 				});
 			}
-			ses->~Session();
 
 			instance->send_rsv.del(ses);
 			instance->del_rsv.del(ses); // del Session if exists.
@@ -460,6 +455,10 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 				if (group_map.find(ses->group) != group_map.end())
 					group_map[ses->group].erase(ses);
 			});
+
+			LwsSession* extra = static_cast<LwsSession*>(ses->secret->extra);
+			if (extra) delete extra;
+			ses->~Session();
 
 			instance->log(_L_BLUE "[%14p] A Session is closed.", (void*)ses);
 		}

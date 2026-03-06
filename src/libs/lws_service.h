@@ -13,6 +13,7 @@
 #include <vector>
 #include "network_service.h"
 #include "set_super.h"
+#include <stdio.h>
 #include "../dynamic_compile/dynamic_compile.h"
 
 typedef struct lws_context ctx;

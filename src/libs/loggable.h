@@ -13,11 +13,40 @@
 #define ___L_ESCAPE								"\033[0m"
 
 #include <string>
+#include <queue>
+#include <map>
+#include <thread>
 #include <cstdarg>
+#include <mutex>
+#include <condition_variable>
+#include <atomic>
 
 #include "class.h"
+#include "times.h"
 #include "../dynamic_compile/dynamic_compile.h"
 __DYNAMIC_INCLUDES__
+
+struct LogEntry {
+    std::string message;
+    bool is_stderr;
+};
+
+// RAII wrapper for the logger thread and queue
+struct LoggerContext {
+    std::multimap<msec64, LogEntry> queue;
+    std::mutex              mutex;
+    std::condition_variable cv;
+    std::atomic<bool>       running;
+    std::thread             worker;
+
+    LoggerContext();
+    ~LoggerContext();
+
+    void enqueue(msec64 timestamp, std::string message, bool is_stderr);
+
+private:
+    void run();
+};
 
 __virtual_parent__ class Loggable {
 	var_protected:
@@ -31,16 +60,18 @@ __virtual_parent__ class Loggable {
 		void log(const char* format, ...) const;
 		void elog(const char* format, ...) const;
 		inline void dlog(const char* format, ...) const {
-			#ifdef DEBUG
+		#ifdef DEBUG
 			va_list args;
-    		va_start(args, format);
-			log(format, args);
+			va_start(args, format);
+			vlog(format, args, false);
 			va_end(args);
-			#endif
+		#endif
 		}
 		std::string datetime_str() const;
 
 	func_private:
+		static LoggerContext& _ctx();
+		void vlog(const char* format, va_list args, bool is_err) const;
 		void repl(std::string& str, const std::string& sub) const;
 };
 

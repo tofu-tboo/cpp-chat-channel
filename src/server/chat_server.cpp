@@ -13,12 +13,7 @@ ChatServer::~ChatServer() {
 
 bool ChatServer::init() {
 	if (super::init()) {
-		cron_worker.schedule_every("broadcast", 50, [this]() {
-			resolve_timestamps();
-			resolve_broadcast();
-			std::lock_guard lock(cm_mtx);
-			cur_msgs.clear();
-		});
+		cron_worker.schedule_every("broadcast", 50, [this]() { resolve_timestamps(); resolve_broadcast(); std::lock_guard lock(cm_mtx); cur_msgs.clear(); });
 		return true;
 	}
 	return false;

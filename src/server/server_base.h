@@ -71,6 +71,8 @@ class ServerBase: public SessionEvHandler<U>, virtual public Loggable {
 		CronWorker cron_worker;
 
 		ProducerConsumerQueue<std::shared_ptr<Request>> report_q;
+	var_private:
+		std::thread	background;
     func_public:
         ServerBase(std::shared_ptr<NetworkService<U>> di_service, std::unique_ptr<IMsgTranslator> processor, const int max_fd = 256);
         virtual ~ServerBase();

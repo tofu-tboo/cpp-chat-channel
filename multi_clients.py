@@ -191,7 +191,8 @@ async def handle_client(idx: int, host: str, port: int, delay: Tuple[float, floa
                         elif p_type == "system":
                             event = payload.get("event", "")
                             target_user = payload.get("user_name", "")
-                            q.put(("system", event, target_user, current_channel))
+                            ch_id = payload.get("channel_id", current_channel)
+                            q.put(("system", event, target_user, ch_id))
 
                         elif p_type == "error":
                             message = payload.get("message", "Unknown error")

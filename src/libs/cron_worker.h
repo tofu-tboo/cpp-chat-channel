@@ -27,6 +27,8 @@ class CronWorker {
 		
 		std::condition_variable wait_cv;
 		std::atomic<bool> scheded_in_waiting;
+
+		std::atomic<bool> stopped_;
 	func_public:
 		/**
 		 * @brief Schedule a task to run once at a specific time.
@@ -73,8 +75,11 @@ class CronWorker {
 		 * @return Duration in milliseconds. Returns a very large value if no tasks are scheduled.
 		 */
 		msec64 get_next_tick_duration() const;
+		msec64 get_next_tick_duration_unsafe() const;
 
 		bool wait_for_next_task();
+
+		void stop();
 	func_private:
 		void notify();
 };

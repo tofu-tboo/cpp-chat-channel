@@ -22,7 +22,7 @@ template <typename T>
 bool ProducerConsumerQueue<T>::wait_and_pop(T& out_item) {
 	std::unique_lock lock(mutex_);
     cond_.wait(lock, [this] { return stopped_ || !queue_.empty(); }); // spurious wakeup 방지
-    if (stopped_) return false; // 즉시 반환
+    if (stopped_ || queue_.empty()) return false; // 즉시 반환
     out_item = std::move(queue_.front());
     queue_.pop_front();
     return true;
@@ -32,7 +32,7 @@ template <typename T>
 bool ProducerConsumerQueue<T>::wait_and_pop_all(std::deque<T>& out_item) {
 	std::unique_lock lock(mutex_);
     cond_.wait(lock, [this] { return stopped_ || !queue_.empty(); });
-    if (stopped_) return false;
+    if (stopped_ || queue_.empty()) return false;
     std::swap(queue_, out_item);
     return true;
 }
