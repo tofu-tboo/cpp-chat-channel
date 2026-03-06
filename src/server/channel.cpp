@@ -1,109 +1,108 @@
 #include "channel.h"
 #include "channel_server.h"
-#include "../libs/chat_res_dto.h"
+#include "dto/chat_res_dto.h"
 #include "../libs/hash.h"
 #include "../libs/dto.h"
 
 Channel::Channel(std::shared_ptr<NetworkService<User>> service, ChannelServer* srv, ch_id_t id, const int max_conn): super(std::move(service), max_conn), channel_id(id), server(srv), freed_rsv(false), Loggable("Channel", _L_CYAN, this) {}
 Channel::~Channel() {}
 
-bool Channel::init() {
-	if (!super::init()) {
-		return false;
-	}
-	return true;
-}
+bool Channel::init() { return super::init(); }
 
 void Channel::proc() {
 	cron_worker.run_pending();
 }
 
-void Channel::leave(Session& ses, const MessageReqDto& msg) {
+void Channel::leave(Session& ses) {
 	cur_conn--;
 	if (cur_conn == 0) {
 		freed_rsv = true;
 	}
 
 	// service->change_session_group(&ses, INT_MIN);
-
-	std::lock_guard lock(mq_mtx);
-	mq.push({&ses, msg});
 }
 
-void Channel::join(Session& ses, const MessageReqDto& msg) {
+void Channel::join(Session& ses) {
 	cur_conn++;
 	freed_rsv.exchange(false);
 
 	service->change_session_group(&ses, channel_id);
 	service->register_handler(&ses, this);
-
-	std::lock_guard lock(mq_mtx);
-	mq.push({&ses, msg});
 }
 
 void Channel::leave_and_logging(Session& ses) {
 	User* user = ses.user;
-	MessageReqDto sys_msg = { .type = SYSTEM, .text = "leave", .timestamp = now_ms(), .channel_id = channel_id };
+	MessageReqDto msg = { .type = SYSTEM, .text = "leave", .timestamp = now_ms(), .channel_id = channel_id };
 
 
-	if (user->name) sys_msg.user_name = user->name;
+	if (user->name) msg.user_name = user->name;
 	else {
 		rsv_close(&ses, R"({"type":"error","message":"Missing name."})");
 		return;
 	}
 
-	leave(ses, sys_msg);
+	leave(ses);
+	{
+		std::lock_guard lock(mq_mtx);
+		mq.push({&ses, msg});
+	}
 
-	log(_L_RED "[Leave] " _L_CYAN "User %p" _L_DEFAULT " left channel %u at %lu" _L_DEFAULT, ses.user, channel_id, sys_msg.timestamp);
+	log(_L_RED "[Leave] " _L_CYAN "User %p" _L_DEFAULT " left channel %u at %lu" _L_DEFAULT, ses.user, channel_id, msg.timestamp);
 }
 
 void Channel::join_and_logging(Session& ses, bool re) {
 	User* user = ses.user;
-	MessageReqDto sys_msg = { .type = SYSTEM, .timestamp = now_ms(), .channel_id = channel_id };
+	MessageReqDto msg = { .type = SYSTEM, .timestamp = now_ms(), .channel_id = channel_id };
 
 	
-	if (user->name) sys_msg.user_name = user->name;
+	if (user->name) msg.user_name = user->name;
 	else {
 		return;
 	}
 
-	sys_msg.text = re ? "rejoin" : "join";
+	msg.text = re ? "rejoin" : "join";
 
-	join(ses, sys_msg);
+	join(ses);
+	{
+		std::lock_guard lock(mq_mtx);
+		mq.push({&ses, msg});
+	}
 
-	log(_L_GREEN "[Join] " _L_CYAN "User %p" _L_DEFAULT " joined channel %u at %lu" _L_DEFAULT, ses.user, channel_id, sys_msg.timestamp);
+	log(_L_GREEN "[Join] " _L_CYAN "User %p" _L_DEFAULT " joined channel %u at %lu" _L_DEFAULT, ses.user, channel_id, msg.timestamp);
 }
 
 bool Channel::is_full() {
 	return cur_conn >= max_conn;
 }
 
-msec64 Channel::want_freed() const { return freed_rsv; }
+bool Channel::want_freed() const { return freed_rsv; }
 void Channel::use() { freed_rsv = false; }
 
 #pragma region PROTECTED_FUNC
 
 void Channel::on_accept(Session& ses) {}
 
-void Channel::handle_request(Session& ses, std::unique_ptr<Request> req) {
+void Channel::handle_request(Session& ses, std::shared_ptr<Request> req) {
 	JsonRequest* json_req = dynamic_cast<JsonRequest*>(req.get());
 	if (!json_req) return;
 
-	ChatReqDto dto(&json_req->root);
+	ChatReqDto dto(json_req);
 
 	switch_hash (dto.type.c_str()) {
 		case_hash ("message"):
 		case_hash ("Message"):
 		case_hash ("MESSAGE"):
 				// Delegate to ChatServer for messages
-				super::handle_request(ses, std::move(req));
+				super::handle_request(ses, req);
 			break;
 		case_hash ("join"):
 		case_hash ("Join"):
 		case_hash ("JOIN"):
 			{
 				if (dto.channel_id == channel_id) return;
-				server->switch_channel(const_cast<Session&>(ses), channel_id, dto.channel_id);
+				// server->switch_channel(const_cast<Session&>(ses), channel_id, dto.channel_id);
+				ChatReportDto<User>* rep = new ChatReportDto<User>(&ses, "switch", channel_id, dto.channel_id);
+				server->report(rep);
 			}
 		default:
 			break;
@@ -153,6 +152,9 @@ void Channel::resolve_broadcast() {
 }
 
 void Channel::free_user(Session& ses) {
+	if (cur_conn == 0)
+		freed_rsv = true;
+
 	User* user = ses.user;
 	
 	MessageReqDto msg = { .type = SYSTEM, .text = "leave", .timestamp = now_ms(), .user_name = user->name ? user->name : "unknown", .channel_id = channel_id };

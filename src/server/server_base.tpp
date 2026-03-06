@@ -34,26 +34,56 @@ template <typename U>
 void ServerBase<U>::proc() {
    	service->start();
 	std::thread background([this]() {
+		dlog("Cron worker thread started.");
 		while (service->is_running()) {
 			cron_worker.run_pending();
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			cron_worker.wait_for_next_task();
 		}
+		dlog("Cron worker thread finished.");
 	});
+	dlog("Main proc loop started.");
 	while (service->is_running()) {
-		cron_worker.run_pending();
-		// MPMC Q
-		cron_worker.wait_for_next_task();
+		std::deque<std::shared_ptr<Request>> reports;
+		if (report_q.wait_and_pop_all(reports)) {
+			for (std::shared_ptr<Request>& rep: reports) {
+				consume_report(rep);
+			}
+		} else {
+			// when MPMC stopped
+		}
 	}
+	dlog("Main proc loop finished. Joining threads...");
 	service->join(); // Wait for I/O threads to finish
+	dlog("Network service threads joined.");
 	if (background.joinable()) {
 		background.join(); // Then, wait for the cron worker thread to finish
 	}
+	dlog("Cron worker thread joined. Shutdown complete.");
 }
 
 template <typename U>
 void ServerBase<U>::stop() {
-    if (service) service->stop();
+	dlog("Stop requested.");
+    if (service) {
+		dlog("Stopping network service...");
+		service->stop();
+	}
+	dlog("Stopping report queue...");
+	report_q.stop();
+	dlog("Notifying cron worker to stop...");
+	cron_worker.schedule_in(0, [](){}); // Wake up cron worker thread
 }
+
+template <typename U>
+void ServerBase<U>::report(std::shared_ptr<Request> req) {
+	report_q.push(req);
+}
+
+template <typename U>
+void ServerBase<U>::report(Request* req) {
+	report_q.push(std::shared_ptr<Request>(req));
+}
+
 
 #pragma region PRIVATE_FUNC
 #pragma endregion
@@ -61,7 +91,7 @@ void ServerBase<U>::stop() {
 #pragma region PROTECTED_FUNC
 template <typename U>
 void ServerBase<U>::resolve_close() {
-	std::shared_lock lock(nc_mtx);
+	std::unique_lock lock(nc_mtx);
     for (auto [ses, msg] : nxt_close) {
 		service->close(ses, msg);
     }
@@ -94,7 +124,7 @@ template <typename U>
 void ServerBase<U>::on_recv(Session& ses, const RecvStream& stream) {
     if (msg_translator) {
 		auto req = msg_translator->decode(std::string(reinterpret_cast<const char*>(stream.data), stream.len));
-		handle_request(ses, std::move(req));
+		handle_request(ses, req);
 	}
 }
 
@@ -103,6 +133,9 @@ void ServerBase<U>::on_send(Session& ses) {}
 
 template <typename U>
 void ServerBase<U>::on_rate_limit_packet_drop(Session& ses) {}
+
+template <typename U>
+void ServerBase<U>::consume_report(std::shared_ptr<Request> req) {}
 
 template <typename U>
 void ServerBase<U>::free_user(Session& ses) {}

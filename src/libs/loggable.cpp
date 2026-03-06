@@ -1,6 +1,5 @@
 #include "loggable.h"
 #include <cstring>
-#include <cstdarg>
 #include <ctime>
 #include <chrono>
 
@@ -47,6 +46,7 @@ void Loggable::elog(const char* format, ...) const {
 
     fprintf(stderr, "%s", full_log.c_str());
 }
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-truncation"
 

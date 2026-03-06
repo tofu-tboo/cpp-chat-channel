@@ -33,7 +33,7 @@ class ChatServer : public ServerBase<User> {
 
 		// Hooks
 		virtual void on_accept(Session& ses) override;
-		virtual void handle_request(Session& ses, std::unique_ptr<Request> req) override;
+		virtual void handle_request(Session& ses, std::shared_ptr<Request> req) override;
 };
 
 #endif

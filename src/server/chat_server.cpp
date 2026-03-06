@@ -1,7 +1,7 @@
 #include "chat_server.h"
 #include "../libs/json_translator.h"
-#include "../libs/chat_res_dto.h"
-#include "../libs/chat_req_dto.h"
+#include "dto/chat_res_dto.h"
+#include "dto/chat_req_dto.h"
 #include "../libs/hash.h"
 
 ChatServer::ChatServer(std::shared_ptr<NetworkService<User>> service, const int max_fd)
@@ -35,7 +35,7 @@ void ChatServer::resolve_timestamps() {
 
 	while (!local_q.empty()) {
         auto item = std::move(local_q.front());
-        local_q.pop();
+        local_q.pop_front();
 
 		cur_msgs.emplace(item.second.timestamp, item);
 	}
@@ -93,11 +93,11 @@ void ChatServer::on_accept(Session& ses) {
 	ses.user->name = strdup(user_name);
 }
 
-void ChatServer::handle_request(Session& ses, std::unique_ptr<Request> req) {
+void ChatServer::handle_request(Session& ses, std::shared_ptr<Request> req) {
 	JsonRequest* json_req = dynamic_cast<JsonRequest*>(req.get());
 	if (!json_req) return;
 
-	ChatReqDto dto(&json_req->root);
+	ChatReqDto dto(json_req);
 
 	switch_hash (dto.type.c_str()) {
 		case_hash ("message"):

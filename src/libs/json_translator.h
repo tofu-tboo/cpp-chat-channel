@@ -33,7 +33,7 @@ struct JsonResponse : public Response {
 
 class JsonTranslator : public IMsgTranslator {
 	public:
-		 virtual std::unique_ptr<Request> decode(const std::string& frame) override;
+		 virtual std::shared_ptr<Request> decode(const std::string& frame) override;
 		 virtual std::string encode(const Response& res) override;
 };
 

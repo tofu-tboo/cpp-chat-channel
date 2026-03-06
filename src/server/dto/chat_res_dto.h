@@ -1,18 +1,16 @@
 #ifndef __CHAT_RES_DTO_H__
 #define __CHAT_RES_DTO_H__
 
-#include "json.h"
-#include "json_translator.h"
-#include "../server/channel_server_types.h"
+#include "../../libs/json.h"
+#include "../../libs/msg_translator.h"
+#include "../channel_server_types.h"
 
 
-struct ChatResDto : public JsonResponse {
+struct ChatResDto : public Response {
 	std::string type;
 	std::string event;
 	std::string user_name;
 	ch_id_t channel_id;
-
-	ChatResDto() : JsonResponse(nullptr) {}
 
 	virtual std::string to_frame() const override {
 		Json res(json_pack("{s:s,s:s,s:s,s:i}",
@@ -26,10 +24,8 @@ struct ChatResDto : public JsonResponse {
 	}
 };
 
-struct ChatResDtoArray: public JsonResponse {
+struct ChatResDtoArray: public Response {
 	std::vector<ChatResDto> entries;
-
-	ChatResDtoArray() : JsonResponse(nullptr) {}
 
 	virtual std::string to_frame() const override {
 		Json arr(json_array());

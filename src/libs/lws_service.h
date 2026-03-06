@@ -60,6 +60,7 @@ class LwsService: public NetworkService<T>, virtual public Loggable {
 		ctx_creation_info info;
 
 		bool fl_rsv;
+		std::mutex fl_mtx;
 	func_public:
 		LwsService(const port_t port, const size_t tcnt = 1);
 		~LwsService();

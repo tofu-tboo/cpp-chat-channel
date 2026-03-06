@@ -27,6 +27,7 @@
 #include "../libs/network_service.h"
 #include "../libs/session_event_handler.h"
 #include "../libs/cron_worker.h"
+#include "../libs/producer_consumer.h"
 
 /*
 All servers have only one shared file descriptor listening on a port.
@@ -68,6 +69,8 @@ class ServerBase: public SessionEvHandler<U>, virtual public Loggable {
 		std::atomic<unsigned int> cur_conn;
 
 		CronWorker cron_worker;
+
+		ProducerConsumerQueue<std::shared_ptr<Request>> report_q;
     func_public:
         ServerBase(std::shared_ptr<NetworkService<U>> di_service, std::unique_ptr<IMsgTranslator> processor, const int max_fd = 256);
         virtual ~ServerBase();
@@ -75,6 +78,9 @@ class ServerBase: public SessionEvHandler<U>, virtual public Loggable {
 		virtual bool init();
         virtual void proc(); // 외부에서의 서버 진입점
         void stop();
+		
+		void report(std::shared_ptr<Request> req);
+		void report(Request* req);
 
     func_protected:
         void resolve_close();
@@ -85,7 +91,9 @@ class ServerBase: public SessionEvHandler<U>, virtual public Loggable {
 		virtual void on_send(Session& ses);
 		virtual void on_rate_limit_packet_drop(Session& ses);
 
-		virtual void handle_request(Session& ses, std::unique_ptr<Request> req) = 0;
+		virtual void handle_request(Session& ses, std::shared_ptr<Request> req) = 0;
+		
+		virtual void consume_report(std::shared_ptr<Request> req);
 
 		virtual void free_user(Session& ses);
 		void rsv_close(Session* ses, const std::string& msg = "");

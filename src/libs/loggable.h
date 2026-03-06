@@ -13,6 +13,7 @@
 #define ___L_ESCAPE								"\033[0m"
 
 #include <string>
+#include <cstdarg>
 
 #include "class.h"
 #include "../dynamic_compile/dynamic_compile.h"
@@ -29,6 +30,14 @@ __virtual_parent__ class Loggable {
 
 		void log(const char* format, ...) const;
 		void elog(const char* format, ...) const;
+		inline void dlog(const char* format, ...) const {
+			#ifdef DEBUG
+			va_list args;
+    		va_start(args, format);
+			log(format, args);
+			va_end(args);
+			#endif
+		}
 		std::string datetime_str() const;
 
 	func_private:

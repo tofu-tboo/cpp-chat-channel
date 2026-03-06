@@ -46,7 +46,7 @@ SERVER_EXE        := $(OUT_DIR)/server
 .DEFAULT_GOAL := server
 
 # Phony targets for commands that aren't files
-.PHONY: all server server-simple client client-win debug check clean ngrok dynamic_compile
+.PHONY: all server server-simple client client-win debug debug-all debug-thread debug-address check clean ngrok dynamic_compile
 
 # --- High-Level Targets ---
 all: server server-simple client
@@ -97,14 +97,26 @@ $(OUT_DIR):
 	mkdir -p $(OUT_DIR)
 
 # --- Utility Commands ---
-# Debug build: adds -g and -DDEBUG flags and rebuilds everything
-debug: clean
-	$(MAKE) all CXXFLAGS="$(CXXFLAGS) -g -DDEBUG"
+# Debug build targets
+# These add debug flags and then depend on the 'all' or 'server' target.
+debug: CXXFLAGS += -g -DDEBUG
+debug: server
+
+debug-all: CXXFLAGS += -g -DDEBUG
+debug-all: all
+
+debug-thread: CXXFLAGS += -g -DDEBUG -fsanitize=thread
+debug-thread: LDFLAGS += -fsanitize=thread
+debug-thread: server
+
+debug-address: CXXFLAGS += -g -DDEBUG -fsanitize=address
+debug-address: LDFLAGS += -fsanitize=address
+debug-address: server
 
 # Run valgrind for memory checking on the main server
-check:
-	$(MAKE) server CXXFLAGS="$(CXXFLAGS) -g -DDEBUG"
-	valgrind --leak-check=full --show-leak-kinds=all ./$(SERVER_EXE)
+check: debug
+	@echo "==> Running valgrind..."
+	valgrind --leak-check=full --show-leak-kinds=all $(SERVER_EXE)
 
 clean:
 	@echo "==> Cleaning up..."

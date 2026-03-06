@@ -25,15 +25,23 @@ template <typename T>
 LwsService<T>::LwsService(const port_t port, const size_t tcnt): context(nullptr), fl_rsv(false), Loggable("LwsService", _L_GREEN, this) {
 	thread_pool = new ThreadPool<T, "lws">(this, tcnt);
 
-	// Set context info
 	memset(&info, 0, sizeof(info));
 	info.port = port;
+	info.user = this;
 	info.protocols = LwsService<T>::protocols;
 	info.options = LWS_SERVER_OPTION_FALLBACK_TO_RAW | LWS_SERVER_OPTION_DISABLE_OS_CA_CERTS; // TCP & WS compatibility
+
+	// WS
 	info.timeout_secs = 15; // WS handshake timeout
+	
+	// Threading
 	// info.fd_limit_per_thread = int;
 	info.count_threads = thread_pool->get_size();
-	info.user = this;
+
+	// Raw TCP
+	info.ka_time = 60;      // After 60s of inactivity, start sending keepalive probes
+	info.ka_interval = 30;  // Send a probe every 30s
+	info.ka_probes = 5; 
 }
 
 template <typename T>
@@ -162,6 +170,7 @@ void LwsService<T>::accumulate(Session* ses, const unsigned char* data, size_t l
 #pragma region PRIVATE_FUNC
 template <typename T>
 void LwsService<T>::flush() {
+	std::lock_guard lock(fl_mtx);
 	if (!fl_rsv) {
 		lws_cancel_service(context);
 		fl_rsv = true;
@@ -260,9 +269,9 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 			new_extra->wsi = wsi;
 			ses->secret->extra = new_extra;
 
-			if (reason == LWS_CALLBACK_RAW_ADOPT) {
-				instance->set_timeout(ses, wsi, TO_EV_PING_PONG); // set TCP ping-pong timer
-			}
+			// if (reason == LWS_CALLBACK_RAW_ADOPT) {
+			// 	instance->set_timeout(ses, wsi, TO_EV_PING_PONG); // set TCP ping-pong timer
+			// }
 
 			instance->send_rsv.add(ses, std::queue<std::vector<unsigned char>>());
 
@@ -373,8 +382,10 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 		}
 		case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
 		{
-
-			instance->fl_rsv = false;
+			{
+				std::lock_guard lock(instance->fl_mtx);
+				instance->fl_rsv = false;
+			}
 			std::map<Session*, std::string> dels;
 
 			dels = instance->del_rsv.move();
@@ -443,6 +454,7 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 			ses->~Session();
 
 			instance->send_rsv.del(ses);
+			instance->del_rsv.del(ses); // del Session if exists.
 			
 			instance->session_group.task([ses](auto& group_map) {
 				if (group_map.find(ses->group) != group_map.end())

@@ -17,7 +17,7 @@ struct Response {
 class IMsgTranslator {
 public:
     virtual ~IMsgTranslator() = default;
-    virtual std::unique_ptr<Request> decode(const std::string& frame) = 0; // return type as decltype(auto)?
+    virtual std::shared_ptr<Request> decode(const std::string& frame) = 0; // return type as decltype(auto)?
 	virtual std::string encode(const Response& res) = 0;
 };
 

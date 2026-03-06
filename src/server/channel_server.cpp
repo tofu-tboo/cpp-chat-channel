@@ -1,6 +1,6 @@
 #include "channel_server.h"
 #include "../libs/json_translator.h"
-#include "../libs/chat_res_dto.h"
+#include "dto/chat_res_dto.h"
 #include "../libs/times.h"
 #include "../libs/hash.h"
 
@@ -35,21 +35,23 @@ bool ChannelServer::init() {
 	return false;	
 }
 
+#pragma region PROTECTED_FUNC
 void ChannelServer::switch_channel(Session& ses, const ch_id_t from, const ch_id_t to) {
+	std::lock_guard lock(chs_mtx);
 	msec64 timestamp = now_ms();
-	Channel* ch_from = get_or_create_ch(from);
-	Channel* ch_to = get_or_create_ch(to);
+	Channel* ch_from = get_or_create_ch_unsafe(from);
+	Channel* ch_to = get_or_create_ch_unsafe(to);
 	
-	if (!ch_to->is_full()) {
+	if (ch_to->is_full()) {
 		elog(_L_CYAN "Channel %u" _L_DEFAULT " is full.", to);
 		service->send(&ses, std::string(R"({"type":"error","message":"The channel is full."})"));
 		return;
-	}	
+	}
+	
 	ch_to->join_and_logging(ses, true);
 	ch_from->leave_and_logging(ses);
 }
 
-#pragma region PROTECTED_FUNC
 void ChannelServer::free_user(Session& ses) {
 	User* user = ses.user;
 	if (user->name) free(user->name);
@@ -65,11 +67,11 @@ void ChannelServer::on_accept(Session& ses) {
 	last_act[&ses] = now_ms();
 }
 
-void ChannelServer::handle_request(Session& ses, std::unique_ptr<Request> req) {
+void ChannelServer::handle_request(Session& ses, std::shared_ptr<Request> req) {
 	JsonRequest* json_req = dynamic_cast<JsonRequest*>(req.get());
 	if (!json_req) return;
 
-	ChatReqDto dto(&json_req->root);
+	ChatReqDto dto(json_req);
 
 	switch_hash (dto.type.c_str()) {
 		case_hash ("join"):
@@ -92,10 +94,14 @@ void ChannelServer::handle_request(Session& ses, std::unique_ptr<Request> req) {
 				}
 
 				// 3. Join ch
-				Channel* target_ch = find_pref_or_rand_ch(-1);
-				target_ch->join_and_logging(const_cast<Session&>(ses), false);
+				// Channel* target_ch = find_pref_or_rand_ch(-1);
+				// target_ch->join_and_logging(const_cast<Session&>(ses), false);
+				ChatReportDto<User>* join_rep = new ChatReportDto<User>(&ses, "join", 0, dto.channel_id);
+				report(join_rep);
 				
 				cur_conn--;
+
+				
 				break;
 			}
 		default:
@@ -104,12 +110,40 @@ void ChannelServer::handle_request(Session& ses, std::unique_ptr<Request> req) {
 	
 }
 
+void ChannelServer::consume_report(std::shared_ptr<Request> req) {
+	ChatReportDto<User>* rep = dynamic_cast<ChatReportDto<User>*>(req.get());
+	if (!rep) return;
+
+	switch_hash (rep->type.c_str()) {
+		case_hash ("join"):
+		case_hash ("Join"):
+		case_hash ("JOIN"):
+		{
+			Channel* target_ch = find_pref_or_rand_ch(-1);
+			target_ch->join_and_logging(*rep->ses, false);
+			break;
+		}
+		case_hash ("switch"):
+		case_hash ("Switch"):
+		case_hash ("SWITCH"):
+		{
+			switch_channel(*rep->ses, rep->channel_id1, rep->channel_id2);
+			break;
+		}
+		default:
+			break;
+	}
+}
+
 #pragma endregion
 
 #pragma region PRIVATE_FUNC
 Channel* ChannelServer::get_or_create_ch(const ch_id_t channel_id) {
 	std::lock_guard lock(chs_mtx);
-	
+	return get_or_create_ch_unsafe(channel_id);
+}
+
+Channel* ChannelServer::get_or_create_ch_unsafe(const ch_id_t channel_id) {
 	std::map<ch_id_t, Channel*>::iterator it = channels.find(channel_id);
 	if (it != channels.end()) {
 		Channel* ch = it->second;
@@ -125,25 +159,27 @@ Channel* ChannelServer::get_or_create_ch(const ch_id_t channel_id) {
 }
 
 Channel* ChannelServer::find_pref_or_rand_ch(ch_id_t preferred_id) {
+	std::lock_guard lock(chs_mtx);
 	if (preferred_id != -1) {
-		Channel* target_ch = get_or_create_ch(preferred_id);
+		Channel* target_ch = get_or_create_ch_unsafe(preferred_id);
 
 		if (!target_ch->is_full()) {
 			return target_ch;
 		}
 	}
     
-	std::lock_guard lock(chs_mtx);
 	ch_id_t expected = 0;
 	for (auto [id, _]: channels) {
 		if (id != expected) {
-			Channel* candidate = get_or_create_ch(id);
+			Channel* candidate = get_or_create_ch_unsafe(id);
 			if (!candidate->is_full()) {
 				return candidate;
 			}
 		}
 		expected++;
 	}
+
+	return get_or_create_ch_unsafe(expected);
 }
 
 void ChannelServer::check_lobby() {
@@ -170,13 +206,13 @@ void ChannelServer::scan_channels_to_freed() {
 	std::lock_guard lock(chs_mtx);
 	for (std::map<ch_id_t, Channel*>::iterator it = channels.begin(); it != channels.end();) {
 		Channel* ch = it->second;
-		if (channel->want_freed()) {
+		if (ch->want_freed()) {
 			log(_L_CYAN "Channel %u" _L_DEFAULT " destroyed due to inactivity.", it->first);
-			delete channel;
-			channels.erase(id);
-			continue;
+			delete ch;
+			it = channels.erase(it);
+		} else {
+			it++;
 		}
-		it++
 	}
 }
 #pragma endregion

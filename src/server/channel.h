@@ -6,7 +6,7 @@ typedef unsigned int ch_id_t;
 #include <thread>
 #include <atomic>
 
-#include "../libs/chat_req_dto.h"
+#include "dto/chat_req_dto.h"
 #include "../libs/set_super.h"
 #include "../libs/times.h"
 #include "../libs/dto.h"
@@ -29,8 +29,8 @@ class Channel: public ChatServer {
 		virtual void proc() override;
 
 		// Can be polluted by other threads but protecting by ConnectionTracker's mutex
-        void leave(Session& user, const MessageReqDto& msg);
-        void join(Session& user, const MessageReqDto& msg);
+        void leave(Session& user);
+        void join(Session& user);
 		void leave_and_logging(Session& ses);
 		void join_and_logging(Session& ses, bool re = true);
 
@@ -42,7 +42,7 @@ class Channel: public ChatServer {
     func_protected: // Sequencially called in proc() => no needed mutex
 
         virtual void on_accept(Session& client) override;
-        virtual void handle_request(Session& ses, std::unique_ptr<Request> req) override;
+        virtual void handle_request(Session& ses, std::shared_ptr<Request> req) override;
         virtual void resolve_broadcast() override;
 
 		virtual void free_user(Session& ses) override;
