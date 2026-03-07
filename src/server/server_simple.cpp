@@ -6,17 +6,14 @@
 #include "server_factory.h"
 #include "chat_server.h"
 #include "../libs/lws_service.h"
-
-ChatServer* g_server = nullptr;
-
-void signal_handler(int signum) {
-    if (g_server) {
-        LOG("Signal %d received. Stopping server...", signum);
-        g_server->stop();
-    }
-}
+#include "channel_factory.h"
+#include "../libs/json_translator.h"
+#include "../libs/signal_handler_thread.h"
 
 int main(int argc, char* argv[]) {
+	SignalHandler sig_handler;
+	sig_handler.setup_mask();
+
     // if one of argv's key is lobbyN or chN, parse the its value as max fd of ChannelServer
 	int lobby_max_fd = 32;
 	const char* env_p = std::getenv("PORT");
@@ -29,14 +26,20 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
-
 	auto service = std::make_shared<LwsService<User>>(port, 8);
-	g_server = ServerFactory::create<User, ChatServer>(std::move(service), lobby_max_fd);
+	auto server = ServerFactory::create<User, ChatServer>(service, lobby_max_fd);
+	printf("LWS Version: %s\n", lws_get_library_version());
 
-    g_server->proc();
+	sig_handler.start([server](int sig) {
+        LOG("\n[Signal] Received signal %d. Shutting down...\n", sig);
+        server->stop();
+    });
 
-    g_server = nullptr;
+    server->proc();
+    sig_handler.stop();
+    
+    delete server;
+    server = nullptr;
+
     return 0;
 }

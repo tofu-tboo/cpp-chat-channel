@@ -2,46 +2,72 @@
 #include <ctime>
 #include <chrono>
 
+struct LogNode {
+    LogEntry entry;
+    msec64 timestamp;
+    LogNode* next;
+};
+
 LoggerContext::LoggerContext(): running(true) {
     worker = std::thread(&LoggerContext::run, this);
 }
 
 LoggerContext::~LoggerContext() {
-    {
-        std::lock_guard<std::mutex> lock(mutex);
-        running = false;
-    }
-    cv.notify_one();
+    running = false;
+    sem.release(); // Wake up worker
     if (worker.joinable()) {
         worker.join();
+    }
+    
+    // Cleanup remaining nodes
+    LogNode* current = head.load();
+    while (current) {
+        LogNode* next = current->next;
+        delete current;
+        current = next;
     }
 }
 
 void LoggerContext::enqueue(msec64 timestamp, std::string message, bool is_stderr) {
-    {
-        std::lock_guard<std::mutex> lock(mutex);
-        queue.emplace(timestamp, LogEntry{ std::move(message), is_stderr });
-    }
-    cv.notify_one();
+    LogNode* node = new LogNode{ {std::move(message), is_stderr}, timestamp, nullptr };
+    
+    // Lock-free push to head
+    node->next = head.load(std::memory_order_relaxed);
+    while (!head.compare_exchange_weak(node->next, node, std::memory_order_release, std::memory_order_relaxed));
+    
+    sem.release();
 }
 
 void LoggerContext::run() {
     while (true) {
-        std::multimap<msec64, LogEntry> local_queue;
-        {
-            std::unique_lock<std::mutex> lock(mutex);
-            cv.wait(lock, [this] {
-                return !queue.empty() || !running;
-            });
+        sem.acquire();
 
-            if (!running && queue.empty()) {
-                break;
-            }
+        // Atomic pop all (take ownership of the whole list)
+        LogNode* local_head = head.exchange(nullptr, std::memory_order_acquire);
+        
+        if (!local_head && !running) break;
 
-            std::swap(local_queue, queue);
+        // Reverse the list to restore FIFO order (Oldest -> Newest)
+        LogNode* prev = nullptr;
+        LogNode* current = local_head;
+        while (current) {
+            LogNode* next = current->next;
+            current->next = prev;
+            prev = current;
+            current = next;
+        }
+        local_head = prev;
+
+        // Sort by timestamp
+        std::multimap<msec64, LogEntry> sorted_logs;
+        while (local_head) {
+            LogNode* next = local_head->next;
+            sorted_logs.emplace(local_head->timestamp, std::move(local_head->entry));
+            delete local_head;
+            local_head = next;
         }
 
-        for (const auto& [timestamp, entry] : local_queue) {
+        for (const auto& [timestamp, entry] : sorted_logs) {
             fprintf(entry.is_stderr ? stderr : stdout, "%s", entry.message.c_str());
         }
     }
@@ -98,6 +124,24 @@ void Loggable::elog(const char* format, ...) const {
     vlog(format, args, true);
     va_end(args);
 }
+
+// std::string Loggable::get_str(const char* format, ...) const {
+//     char msg_buffer[LOG_BUF_SIZE];
+//     vsnprintf(msg_buffer, sizeof(msg_buffer), format, args);
+
+//     std::string fmt_msg(msg_buffer);
+//     std::string full_log;
+    
+//     if (is_err) {
+//         repl(fmt_msg, _L_RED);
+//         full_log = datetime_str() + " " + get_log_context() + _L_RED + fmt_msg + ___L_ESCAPE + "\n";
+//     } else {
+//         repl(fmt_msg, _color);
+//         full_log = datetime_str() + " " + get_log_context() + fmt_msg + ___L_ESCAPE + "\n";
+//     }
+
+//     return full_log;
+// }
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-truncation"

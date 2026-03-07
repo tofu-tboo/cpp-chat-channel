@@ -100,18 +100,18 @@ $(OUT_DIR):
 # Debug build targets
 # These add debug flags and then depend on the 'all' or 'server' target.
 debug: CXXFLAGS += -g -DDEBUG
-debug: server
+debug: server server-simple
 
 debug-all: CXXFLAGS += -g -DDEBUG
-debug-all: all
+debug-all: all server-simple
 
 debug-thread: CXXFLAGS += -g -DDEBUG -fsanitize=thread
 debug-thread: LDFLAGS += -fsanitize=thread
-debug-thread: server
+debug-thread: server server-simple
 
 debug-address: CXXFLAGS += -g -DDEBUG -fsanitize=address
 debug-address: LDFLAGS += -fsanitize=address
-debug-address: server
+debug-address: server server-simple
 
 # Run valgrind for memory checking on the main server
 check: debug

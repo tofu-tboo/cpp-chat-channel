@@ -17,8 +17,12 @@ ChannelServer::~ChannelServer() {
 
 bool ChannelServer::init() {
 	if (super::init()) {
-		cron_worker.schedule_every("check lobby", 100, [this]() { check_lobby(); });
-		cron_worker.schedule_every("cleanup", 1000, [this]() { scan_channels_to_freed(); });
+		cron_worker.schedule_every("check lobby", 100, [this]() {
+			check_lobby();
+		});
+		cron_worker.schedule_every("cleanup", 1000, [this]() {
+			scan_channels_to_freed();
+		});
 		cron_worker.schedule_every("channel proc", 50, [this]() {
 			std::shared_lock lock(chs_mtx);
 			for (auto& [_, channel] : channels) channel->proc();

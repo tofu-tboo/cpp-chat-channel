@@ -70,6 +70,7 @@ class NetworkService: virtual public Loggable {
 		struct CallbackParam {
 			Session* ses;
 			NS_EV event;
+			// TODO: if implement new library, move this members to secret's extra
 			unsigned char* in;
 			size_t len;
 		};
@@ -81,6 +82,8 @@ class NetworkService: virtual public Loggable {
 			// Rate Limiting (Token Bucket)
 			unsigned int tokens;
 			std::string ip;
+			std::queue<std::vector<unsigned char>> sbuf;
+			std::string rbuf;
 			SessionSecret(): handler(nullptr), prot_id(PROT_NONE), extra(nullptr), tokens(0) {}
 			SessionSecret(NetworkService<T>* service): handler(service->handler), prot_id(PROT_NONE), extra(nullptr), tokens(RL_BURST_MAX) {}
 		};

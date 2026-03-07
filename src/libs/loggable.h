@@ -17,9 +17,8 @@
 #include <map>
 #include <thread>
 #include <cstdarg>
-#include <mutex>
-#include <condition_variable>
 #include <atomic>
+#include <semaphore>
 
 #include "class.h"
 #include "times.h"
@@ -31,11 +30,12 @@ struct LogEntry {
     bool is_stderr;
 };
 
+struct LogNode;
+
 // RAII wrapper for the logger thread and queue
 struct LoggerContext {
-    std::multimap<msec64, LogEntry> queue;
-    std::mutex              mutex;
-    std::condition_variable cv;
+    std::atomic<LogNode*>   head{nullptr};
+    std::counting_semaphore<INT_MAX> sem{0};
     std::atomic<bool>       running;
     std::thread             worker;
 
@@ -67,6 +67,7 @@ __virtual_parent__ class Loggable {
 			va_end(args);
 		#endif
 		}
+		// std::string get_str(const char* format, ...) const;
 		std::string datetime_str() const;
 
 	func_private:

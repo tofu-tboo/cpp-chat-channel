@@ -23,7 +23,7 @@ protocols_t LwsService<T>::protocols[] = {
 
 template <typename T>
 LwsService<T>::LwsService(const port_t port, const size_t tcnt): context(nullptr), fl_rsv(false), Loggable("LwsService", _L_GREEN, this) {
-	thread_pool = new ThreadPool<T, "lws">(this, tcnt);
+	thread_pool = new ThreadPool<T, "lws">(this, 1);
 
 	memset(&info, 0, sizeof(info));
 	info.port = port;
@@ -160,7 +160,7 @@ void LwsService<T>::accumulate(Session* ses, const unsigned char* data, size_t l
 		memcpy(&packet[LWS_PRE + extra], data, len);
     }
 
-	send_rsv.add(ses, std::move(packet));
+	ses->secret->sbuf.push(std::move(packet));
 }
 #pragma endregion
 #pragma region PRIVATE_FUNC
@@ -197,8 +197,8 @@ __CALLBACK_SAFE__ void LwsService<T>::set_timeout(Session* ses, lws* wsi, int fl
 		LwsSession* extra = static_cast<LwsSession*>(ses->secret->extra);
 		
 		extra->to_flag = flag;
-		if (flag & TO_EV_PING_PONG)
-			lws_set_timer_usecs(wsi, S2U);
+		// if (flag & TO_EV_PING_PONG)
+			// lws_set_timer_usecs(wsi, S2U);
 	}
 }
 
@@ -265,11 +265,11 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 			new_extra->wsi = wsi;
 			ses->secret->extra = new_extra;
 
-			// if (reason == LWS_CALLBACK_RAW_ADOPT) {
-			// 	instance->set_timeout(ses, wsi, TO_EV_PING_PONG); // set TCP ping-pong timer
-			// }
+			if (reason == LWS_CALLBACK_RAW_ADOPT) {
+				instance->set_timeout(ses, wsi, TO_EV_PING_PONG); // set TCP ping-pong timer
+			}
 
-			instance->send_rsv.add(ses, std::queue<std::vector<unsigned char>>());
+			// instance->send_rsv.add(ses, std::queue<std::vector<unsigned char>>());
 
 			instance->session_group.add(ses->group, ses); 
 			
@@ -278,70 +278,75 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 			break;
 		}
 		case LWS_CALLBACK_RAW_RX:
-		{
-			// Do only length validation
-			std::string acc(static_cast<const char*>(in), len);
+        {
+            LwsSession* extra = static_cast<LwsSession*>(ses->secret->extra);
+            extra->last_act = now_ms();
 
-			LwsSession* extra = static_cast<LwsSession*>(ses->secret->extra);
-			extra->last_act = now_ms();
-			if (acc.size() >= 4) {
-				uint32_t len = 0;
-				try {
-					len = std::stoul(acc.substr(0, 4), nullptr, 16);
-				} catch (...) {
-					throw runtime_errorf("Invalid frame header from Session %p", (void*)ses);
-				}
+            auto& rbuf = ses->secret->rbuf;
+            rbuf.append(static_cast<const char*>(in), len);
 
-				if (len > MAX_FRAME_SIZE) {
-					throw runtime_errorf("Frame too large from Session %p", (void*)ses);
-				} else if (len == 0) {
-					return 0;
-				} else if (len == 2) { // pong 0002{}
-					instance->log(_L_BLUE "[%14p] Pong received.", (void*)ses);
-					return 0;
-				} else if (acc.size() < 4 + len) {
-					return -1;
-				}
+            while (rbuf.size() >= 4) {
+                uint32_t frame_len = 0;
+                try {
+                    frame_len = std::stoul(rbuf.substr(0, 4), nullptr, 16);
+                } catch (...) {
+                    throw runtime_errorf("Invalid frame header from Session %p", (void*)ses);
+                }
 
-				in_offset = 4;
-			}
-		}
-		case LWS_CALLBACK_RECEIVE:
-		{
-			event = NS_EV::RECV;
+                if (frame_len > MAX_FRAME_SIZE) {
+                    throw runtime_errorf("Frame too large from Session %p", (void*)ses);
+                } else if (frame_len == 0) {
+                    return 0;
+                } else if (frame_len > 0) {
+                    if (instance->is_running()) {
+                        handler = ses->secret->handler;
+                        if (handler) {
+                            handler->callback({ .ses = ses, .event = NS_EV::RECV, .in = reinterpret_cast<unsigned char*>(&rbuf[4]), .len = frame_len });
+                        }
+                    }
+                }
 
-			if (ses->secret->tokens == RL_BURST_MAX)
-				instance->set_timeout(ses, wsi, TO_EV_TOKEN_REFILL);
-			else if (ses->secret->tokens == 0) {
-				event = NS_EV::RL_DROP;
-				lws_rx_flow_control(wsi, 0);
-				break;
-			}
-			
-			ses->secret->tokens--;
+                rbuf.erase(0, 4 + frame_len);
+            }
+            event = NS_EV::NONE;
+        }
+        case LWS_CALLBACK_RECEIVE:
+        {
+			if (reason == LWS_CALLBACK_RECEIVE)
+            	event = NS_EV::RECV;
 
-			instance->log(_L_BLUE "[%14p] Frame received: %zu bytes.", (void*)ses, len - in_offset);
-			break;
-		}
+            if (ses->secret->tokens == RL_BURST_MAX)
+                instance->set_timeout(ses, wsi, TO_EV_TOKEN_REFILL);
+            else if (ses->secret->tokens == 0) {
+                event = NS_EV::RL_DROP;
+                lws_rx_flow_control(wsi, 0);
+                break;
+            }
+            
+            ses->secret->tokens--;
+
+            instance->log(_L_BLUE "[%14p] Frame received: %zu bytes.", (void*)ses, len - in_offset);
+            break;
+        }
         case LWS_CALLBACK_RAW_WRITEABLE:
 		case LWS_CALLBACK_SERVER_WRITEABLE:
 		{
+			auto& sbuf = ses->secret->sbuf;
 			std::vector<unsigned char> packet;
 			bool more = false;
-			instance->send_rsv.task([ses, wsi, instance, &event, &packet, &more](auto& rsv_map) {
-				if (rsv_map[ses].empty()) return;
 
-				event = NS_EV::SEND;
-				if (lws_partial_buffered(wsi)) {
-					lws_callback_on_writable(wsi);
-					instance->log(_L_BLUE "[%14p] Unsent data exist.", (void*)ses);
-					return;
-				}
+			if (sbuf.empty()) return 0;
+			event = NS_EV::SEND;
 
-				packet = std::move(rsv_map[ses].front());
-				rsv_map[ses].pop();
-				more = !rsv_map[ses].empty();
-			});
+			if (lws_partial_buffered(wsi)) {
+				lws_callback_on_writable(wsi);
+				instance->log(_L_BLUE "[%14p] Unsent data exist.", (void*)ses);
+				return 0;
+			}
+
+			packet = std::move(sbuf.front());
+			sbuf.pop();
+			more = !sbuf.empty();
 
 			if (packet.empty()) return 0;
 				
@@ -401,6 +406,7 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 					lws_set_timeout(wsi_to_close, PENDING_TIMEOUT_CLOSE_ACK, LWS_TO_KILL_ASYNC);
 				}
 			}
+
 			break;
 		}
 		case LWS_CALLBACK_FILTER_NETWORK_CONNECTION: 
@@ -411,10 +417,10 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 		case LWS_CALLBACK_TIMER:
 		{
 			LwsSession* extra = static_cast<LwsSession*>(ses->secret->extra);
-			if (extra->to_flag & TO_EV_PING_PONG) {
-				instance->check_pong(ses);
-				instance->set_timeout(ses, wsi, TO_EV_PING_PONG);
-			}
+			// if (extra->to_flag & TO_EV_PING_PONG) {
+			// 	instance->check_pong(ses);
+			// 	instance->set_timeout(ses, wsi, TO_EV_PING_PONG);
+			// }
 			if (extra->to_flag & TO_EV_TOKEN_REFILL) {
 				extra->to_flag ^= TO_EV_TOKEN_REFILL;
 				ses->secret->tokens = RL_BURST_MAX;
@@ -448,7 +454,7 @@ int LwsService<T>::lws_callback(lws* wsi, callback_reason reason, void* session,
 				});
 			}
 
-			instance->send_rsv.del(ses);
+			// instance->send_rsv.del(ses);
 			instance->del_rsv.del(ses); // del Session if exists.
 			
 			instance->session_group.task([ses](auto& group_map) {

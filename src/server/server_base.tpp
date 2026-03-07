@@ -15,6 +15,7 @@ ServerBase<U>::ServerBase(std::shared_ptr<NetworkService<U>> di_service, std::un
 
 template <typename U>
 bool ServerBase<U>::init() {
+	// TSAN 오류 무시하기: init()에서 아무런 스레드도 생성되지 아니함을 보장함.
 	if (service) {
 		service->setup(this);
 		cron_worker.schedule_every("session deletion", 1000, [this]() {
@@ -75,8 +76,8 @@ void ServerBase<U>::stop() {
 	}
 	dlog("Stopping report queue...");
 	report_q.stop();
-	dlog("Notifying cron worker to stop...");
-	cron_worker.stop();
+	// dlog("Notifying cron worker to stop...");
+	// cron_worker.stop();
 }
 
 template <typename U>

@@ -38,7 +38,6 @@ class LwsService: public NetworkService<T>, virtual public Loggable {
 		using NetworkService<T>::del_rsv;
 		using NetworkService<T>::handler;
 		using NetworkService<T>::send;
-		using NetworkService<T>::send_rsv;
 		using NetworkService<T>::serve;
 		using NetworkService<T>::session_group;
 		using NetworkService<T>::setup;
@@ -81,7 +80,6 @@ class LwsService: public NetworkService<T>, virtual public Loggable {
 		virtual void accumulate(Session* ses, const unsigned char* data, size_t len) override final;
 	func_private:
 		void flush();
-		friend void ThreadPool<T, "lws">::stop();
 
 		__CALLBACK_SAFE__ void check_pong(Session* ses);
 		__CALLBACK_SAFE__ void set_timeout(Session* ses, lws* wsi, int flag);
@@ -122,12 +120,6 @@ class ThreadPool<T, "lws">: public IThreadPool<T> {
 					}
 				});
 			}
-		}
-		virtual void stop() override final {
-			super::stop();
-
-			auto service = dynamic_cast<LwsService<T>*>(this->service);
-			service->flush();
 		}
 		virtual void join() override final {
 			for (auto& thread : threads) {
