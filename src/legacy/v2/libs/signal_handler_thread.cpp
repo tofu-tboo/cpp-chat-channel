@@ -13,10 +13,16 @@ SignalHandler::~SignalHandler() {
 }
 
 void SignalHandler::setup_mask() {
-    pthread_sigmask(SIG_BLOCK, &m_signal_set, nullptr);
+    int res = pthread_sigmask(SIG_BLOCK, &m_signal_set, nullptr);
+	if (res != 0)
+		ERROR("pthread_sigmask error occurs: %d", res);
 }
 
 void SignalHandler::start(Callback callback) {
+	if (m_running) {
+		LOG("**The creation of sig handler is skipped.**");
+		return;
+	}
     m_running = true;
     m_handler_thread = std::thread([this, callback]() {
         int sig;
