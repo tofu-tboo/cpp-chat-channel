@@ -3,6 +3,8 @@
 #include <chrono>
 
 Logger::Logger(): running(true) {
+    // Setup a worker
+    running = true;
     worker = std::thread(&LoggerI::consume_logs, this);
 	
 	// if (ptr == nullptr)
@@ -32,11 +34,11 @@ Logger::~Logger() {
 }
 
 
-void Logger::set_src_indicator(void* ptr, std::string classname, std::string color) {
+void Logger::set_src_indicator(void* ptr, std::string classname, std::string color) { // Called by a class instance
 	char buffer[15];
 	snprintf(buffer, sizeof(buffer), "%14p", ptr);
 	indi_map[ptr] = color + "[" + classname + ":" + std::string(buffer) + "] " + _WHITE_; // TODO?: static color + enum param?
-	//TODO: indicator
+	//TODO: get indicator on vlog()
 }
 
 void Logger::enqueue(msec64 timestamp, std::string message, bool is_err) {

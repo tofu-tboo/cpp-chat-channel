@@ -22,7 +22,7 @@
 #endif
 
 #define EVENT(color, format, ...)				LoggerI.log(color "" format _WHITE_ "\n", ##__VA_ARGS__)
-#define LOG1L(format, ...)						LoggerI.log(format, ##__VA_ARGS__)
+#define LOGS(format, ...)						LoggerI.log(format, ##__VA_ARGS__)
 #define LOG(format, ...)                        LoggerI.log(format _WHITE_ "\n", ##__VA_ARGS__)
 #ifndef ERROR
 #define ERROR(format, ...)                      LoggerI.elog(format "\n", ##__VA_ARGS__)
@@ -41,6 +41,15 @@
 
 // v2 -> v3 diff
 // combine LoggerContext & Loggable into Logger
+
+/* Logger Structure
+MACROS	INTERFACE	MQ	
+LOG	--->=======		==
+LOGS--->LoggerI---->  --Worker	
+DLOG--->.vlog		
+ERROR-->=======		==
+
+*/
 
 
 class Logger: public Singleton<Logger> { // Logger::Instance()
