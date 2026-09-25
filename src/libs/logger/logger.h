@@ -36,20 +36,23 @@
 #include <atomic>
 #include <semaphore>
 
-#include "../times.h"
-#include "../singleton.h"
-
-// v2 -> v3 diff
-// combine LoggerContext & Loggable into Logger
-
-/* Logger Structure
-MACROS	INTERFACE	MQ	
-LOG	--->=======		==
-LOGS--->LoggerI---->  --Worker	
-DLOG--->.vlog		
-ERROR-->=======		==
-
+/* USAGE
+	class { LoggerContext ctx; constructor(): ctx(_RED_ "my class") {} }
+	...
+	ctx.log("");
+	OR
+	LOG(ctx, "");
 */
+class LoggerContext {
+	private:
+		const char* indi;
+		const void* src;
+	public:
+		LoggerContext(const void* const s, const char* i);
+		void log(const char* format, ...) const;
+		void elog(const char* format, ...) const;
+		// TODO?: indicator() to return "[indi: src]" form
+}
 
 
 class Logger: public Singleton<Logger> { // Logger::Instance()
@@ -60,30 +63,49 @@ class Logger: public Singleton<Logger> { // Logger::Instance()
 		};
 		struct LogNode {
 			LogEntry entry;
-			msec64 timestamp;
+			std::uint64_t timestamp;
 			LogNode* next;
 		};
 		std::atomic<LogNode*> head{nullptr};
 		std::atomic<bool>       running;
 		std::thread             worker;
 
-		std::map<void*, std::string> indi_map;
+		static Logger* inst;
 	public:
-		void set_src_indicator(void* ptr, std::string classname, std::string color);
+		static Logger* Instance() {
+			if (!inst) {
+				inst = new Logger();
+				atexit(Destroy);
+			}
+			return inst;
+		}
+		static void Destroy() {
+			if (inst) {
+				delete inst;
+				inst = nullptr;
+			}
+		}
 	protected:
 		Logger();
 
-		const char* get_log_context() const;
-
+		// NOT IN THE MEMBER FUNC
+		// log() & elog() just delivery the arguments to vlog() right away, indicating the error flag as true or false.
 		void log(const char* format, ...) const;
 		void elog(const char* format, ...) const;
 		// std::string get_str(const char* format, ...) const;
 		std::string datetime_str() const;
 
+		inline std::uint64_t now() {
+			return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+		}
+
 	private:
+		friend class LoggerContext;
 		void vlog(const char* format, va_list args, bool is_err) const;
+		void vlog(const void* src, const char* indi, const char* format, va_list args, bool is_err) const;
+		str::string indicate(const void* src = nullptr, const char* indi = nullptr);
 		void repl(std::string& str, const std::string& sub) const;
-   		void enqueue(msec64 timestamp, std::string message, bool is_err);
+   		void enqueue(std::uint64_t timestamp, std::string message, bool is_err);
 		void consume_logs();
 };
 

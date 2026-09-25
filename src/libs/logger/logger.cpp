@@ -2,6 +2,22 @@
 #include <ctime>
 #include <chrono>
 
+LoggerContext::LoggerContext(const void* const s, const char* i): indi(i), src(s) {}
+void LoggerContext::log(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    LoggerI.vlog(src, indi, format, args, false);
+    va_end(args);
+}
+void LoggerContext::elog(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    LoggerI.vlog(src, indi, format, args, true);
+    va_end(args);
+}
+
+Logger* Logger::inst = nullptr; 
+
 Logger::Logger(): running(true) {
     // Setup a worker
     running = true;
@@ -34,14 +50,7 @@ Logger::~Logger() {
 }
 
 
-void Logger::set_src_indicator(void* ptr, std::string classname, std::string color) { // Called by a class instance
-	char buffer[15];
-	snprintf(buffer, sizeof(buffer), "%14p", ptr);
-	indi_map[ptr] = color + "[" + classname + ":" + std::string(buffer) + "] " + _WHITE_; // TODO?: static color + enum param?
-	//TODO: get indicator on vlog()
-}
-
-void Logger::enqueue(msec64 timestamp, std::string message, bool is_err) {
+void Logger::enqueue(std::uint64_t timestamp, std::string message, bool is_err) {
     LogNode* node = new LogNode{ {std::move(message), is_err}, timestamp, nullptr };
     
     // Lock-free push to head
@@ -72,7 +81,7 @@ void Logger::consume_logs() {
         local_head = prev;
 
         // Sort by timestamp
-        std::multimap<msec64, LogEntry> sorted_logs;
+        std::multimap<std::uint64_t, LogEntry> sorted_logs;
         while (local_head) {
             LogNode* next = local_head->next;
             sorted_logs.emplace(local_head->timestamp, std::move(local_head->entry));
@@ -86,10 +95,13 @@ void Logger::consume_logs() {
     }
 }
 
-const char* Logger::get_log_context() const {
-	return _log_header.c_str();
+str::string Logger::indicate(const void* src = nullptr, const char* indi = nullptr) {
+    if (src == nullptr || indi == nullptr) {
+        return // TODO: to resolve string construction cost of func returns & vlog's declaration /   
+    }
 }
-
+//void vlog(const void* src, const char* indi, const char* format, va_list args, bool is_err) const; // TODO: params changed from src/indi to ctx for using ctx.indicator()
+		
 void Logger::vlog(const char* format, va_list args, bool is_err) const {
     char msg_buffer[LOG_BUF_SIZE];
     vsnprintf(msg_buffer, sizeof(msg_buffer), format, args);
@@ -99,13 +111,13 @@ void Logger::vlog(const char* format, va_list args, bool is_err) const {
     
     if (is_err) {
         repl(fmt_msg, _RED_);
-        full_log = datetime_str() + " " + get_log_context() + _RED_ + fmt_msg;
+        full_log = datetime_str() + " " + _RED_ + fmt_msg;
     } else {
         repl(fmt_msg, _color);
-        full_log = datetime_str() + " " + get_log_context() + fmt_msg;
+        full_log = datetime_str() + " " + fmt_msg;
     }
 
-    msec64 timestamp = now_ms();
+    std::uint64_t timestamp = now();
     _ctx().enqueue(timestamp, std::move(full_log), is_err);
 }
 
