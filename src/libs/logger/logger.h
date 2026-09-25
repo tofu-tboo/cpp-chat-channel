@@ -45,6 +45,7 @@
 */
 class LoggerContext {
 	private:
+		// It makes sense to each instances have their info of indicators.
 		const char* indi;
 		const void* src;
 	public:
