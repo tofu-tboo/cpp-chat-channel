@@ -99,7 +99,7 @@ class Logger { // Logger::Instance()
 		void elog(const char* format, ...) const;
 		std::string datetime_str() const;
 
-		inline std::uint64_t now() { //TODO: likely to be race?
+		inline std::uint64_t now() {
 			return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 		}
 

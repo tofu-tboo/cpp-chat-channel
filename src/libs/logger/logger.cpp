@@ -165,7 +165,7 @@ void Logger::elog(const char* format, ...) const {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-truncation"
 
-std::string Logger::datetime_str() const { //TODO?: datetime_str(now())
+std::string Logger::datetime_str() const {
     auto now = std::chrono::system_clock::now();
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
     std::time_t timer = std::chrono::system_clock::to_time_t(now);
