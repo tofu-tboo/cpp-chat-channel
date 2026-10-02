@@ -1,19 +1,29 @@
 #include "Logger.h"
-#include <ctime>
+#include <cassert>
+#include <cstring>
 #include <chrono>
+#include <ctime>
 
-LoggerContext::LoggerContext(const void* const s, const char* i): indi(i), src(s) {}
-void LoggerContext::log(const char* format, ...) {
+LoggerContext::LoggerContext(const void* const s, const char* n): name(n), src(s) {
+    assert(strlen(n) <= 32);
+    char buf[2 + 32 + 2 + 14];
+    snprintf(buf, sizeof(buf), "[%s: %014p]", name, src);
+    indi = buf;
+}
+void LoggerContext::log(const char* format, ...) const {
     va_list args;
     va_start(args, format);
-    LoggerI.vlog(src, indi, format, args, false);
+    LoggerI.vlog(this, format, args, false);
     va_end(args);
 }
-void LoggerContext::elog(const char* format, ...) {
+void LoggerContext::elog(const char* format, ...) const {
     va_list args;
     va_start(args, format);
-    LoggerI.vlog(src, indi, format, args, true);
+    LoggerI.vlog(this, format, args, true);
     va_end(args);
+}
+const std::string& LoggerContext::indicator() const {
+    return indi;
 }
 
 Logger* Logger::inst = nullptr; 
@@ -61,13 +71,16 @@ void Logger::enqueue(std::uint64_t timestamp, std::string message, bool is_err) 
 }
 
 void Logger::consume_logs() {
-    while (running) {
+    while (true) {
         sem.acquire();
 
         // Atomic pop all (take ownership of the whole list)
         LogNode* local_head = head.exchange(nullptr, std::memory_order_acquire);
         
-        if (!local_head) continue; 
+        if (!local_head) {
+            if (!running) break; // clear 판별
+            continue;
+        }
 		
         // Reverse the list to restore FIFO order (Oldest -> Newest)
         LogNode* prev = nullptr;
@@ -95,30 +108,44 @@ void Logger::consume_logs() {
     }
 }
 
-str::string Logger::indicate(const void* src = nullptr, const char* indi = nullptr) {
-    if (src == nullptr || indi == nullptr) {
-        return // TODO: to resolve string construction cost of func returns & vlog's declaration /   
+// TODO: to resolve string construction cost of func returns & vlog's declaration /   
+
+void Logger::vlog(const LoggerContext* ctx, const char* format, va_list args, bool is_err) const {
+    char msg_buffer[LOG_BUF_SIZE];
+    vsnprintf(msg_buffer, sizeof(msg_buffer), format, args);
+
+    std::string full_log = datetime_str();
+    full_log += " ";
+    full_log += ctx->indicator();
+    full_log += " ";
+    
+    if (is_err) {
+        full_log += _RED_;
+        full_log += apply_default_color(msg_buffer, _RED_);
+    } else {
+        full_log += apply_default_color(msg_buffer, _WHITE_);
     }
+
+    std::uint64_t timestamp = now();
+    enqueue(timestamp, std::move(full_log), is_err);
 }
-//void vlog(const void* src, const char* indi, const char* format, va_list args, bool is_err) const; // TODO: params changed from src/indi to ctx for using ctx.indicator()
 		
 void Logger::vlog(const char* format, va_list args, bool is_err) const {
     char msg_buffer[LOG_BUF_SIZE];
     vsnprintf(msg_buffer, sizeof(msg_buffer), format, args);
 
-    std::string fmt_msg(msg_buffer);
-    std::string full_log;
+    std::string full_log = datetime_str();
+    full_log += " ";
     
     if (is_err) {
-        repl(fmt_msg, _RED_);
-        full_log = datetime_str() + " " + _RED_ + fmt_msg;
+        full_log += _RED_
+        full_log += apply_default_color(msg_buffer, _RED_);
     } else {
-        repl(fmt_msg, _color);
-        full_log = datetime_str() + " " + fmt_msg;
+        full_log += apply_default_color(msg_buffer, _WHITE_);
     }
 
     std::uint64_t timestamp = now();
-    _ctx().enqueue(timestamp, std::move(full_log), is_err);
+    enqueue(timestamp, std::move(full_log), is_err);
 }
 
 void Logger::log(const char* format, ...) const {
@@ -134,28 +161,11 @@ void Logger::elog(const char* format, ...) const {
     vlog(format, args, true);
     va_end(args);
 }
-// std::string Logger::get_str(const char* format, ...) const {
-//     char msg_buffer[LOG_BUF_SIZE];
-//     vsnprintf(msg_buffer, sizeof(msg_buffer), format, args);
-
-//     std::string fmt_msg(msg_buffer);
-//     std::string full_log;
-    
-//     if (is_err) {
-//         repl(fmt_msg, _RED_);
-//         full_log = datetime_str() + " " + get_log_context() + _RED_ + fmt_msg + _WHITE_ + "\n";
-//     } else {
-//         repl(fmt_msg, _color);
-//         full_log = datetime_str() + " " + get_log_context() + fmt_msg + _WHITE_ + "\n";
-//     }
-
-//     return full_log;
-// }
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-truncation"
 
-std::string Logger::datetime_str() const {
+std::string Logger::datetime_str() const { //TODO?: datetime_str(now())
     auto now = std::chrono::system_clock::now();
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
     std::time_t timer = std::chrono::system_clock::to_time_t(now);
@@ -179,9 +189,18 @@ std::string Logger::datetime_str() const {
 }
 #pragma GCC diagnostic pop
 
-void Logger::repl(std::string& str, const std::string& sub) const {
-	size_t pos = str.find(_L_DEFAULT);
-	if (pos != std::string::npos) {
-		str.replace(pos, sizeof(_L_DEFAULT) - 1, sub);
-	}
+std::string Logger::apply_default_color(
+    const char* str,
+    const char* color
+) const {
+    assert(strlen(color) == 1); // guarantee color tag
+    std::string result(str);
+
+    std::size_t pos = result.find(_END_);
+    while (pos != std::string::npos) {
+        result.replace(pos, 1, color);
+        pos = result.find(_END_);
+    }
+
+    return result;
 }

@@ -14,7 +14,8 @@
 #define _BLUE_        							"\033[0;34m"
 #define _MAGENTA_     							"\033[0;35m"
 #define _CYAN_        							"\033[0;36m"
-	
+#define _END_									"\0x1F" // placeholder
+
 #ifdef DEBUG
 #define DLOG(format, ...)                       LoggerI.log(format _WHITE_ "\n", ##__VA_ARGS__)
 #else
@@ -35,6 +36,8 @@
 #include <cstdarg>
 #include <atomic>
 #include <semaphore>
+#include <chrono>
+
 
 /* USAGE
 	class { LoggerContext ctx; constructor(): ctx(_RED_ "my class") {} }
@@ -46,17 +49,18 @@
 class LoggerContext {
 	private:
 		// It makes sense to each instances have their info of indicators.
-		const char* indi;
-		const void* src;
+		std::string indi;
+		const char* name; // for a static string
+		const void* src; // addr of class inst
 	public:
-		LoggerContext(const void* const s, const char* i);
+		LoggerContext(const void* const s, const char* n);
 		void log(const char* format, ...) const;
 		void elog(const char* format, ...) const;
-		// TODO?: indicator() to return "[indi: src]" form
+		const std::string& indicator() const;
 }
 
 
-class Logger: public Singleton<Logger> { // Logger::Instance()
+class Logger { // Logger::Instance()
 	protected:
 		struct LogEntry {
   		  	std::string message;
@@ -72,7 +76,7 @@ class Logger: public Singleton<Logger> { // Logger::Instance()
 		std::thread             worker;
 
 		static Logger* inst;
-	public:
+	public: // singleton
 		static Logger* Instance() {
 			if (!inst) {
 				inst = new Logger();
@@ -93,19 +97,17 @@ class Logger: public Singleton<Logger> { // Logger::Instance()
 		// log() & elog() just delivery the arguments to vlog() right away, indicating the error flag as true or false.
 		void log(const char* format, ...) const;
 		void elog(const char* format, ...) const;
-		// std::string get_str(const char* format, ...) const;
 		std::string datetime_str() const;
 
-		inline std::uint64_t now() {
+		inline std::uint64_t now() { //TODO: likely to be race?
 			return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 		}
 
 	private:
 		friend class LoggerContext;
 		void vlog(const char* format, va_list args, bool is_err) const;
-		void vlog(const void* src, const char* indi, const char* format, va_list args, bool is_err) const;
-		str::string indicate(const void* src = nullptr, const char* indi = nullptr);
-		void repl(std::string& str, const std::string& sub) const;
+		void vlog(const LoggerContext* ctx, const char* format, va_list args, bool is_err) const;
+		std::string apply_default_color(std::string& str, const std::string& sub) const;
    		void enqueue(std::uint64_t timestamp, std::string message, bool is_err);
 		void consume_logs();
 };
