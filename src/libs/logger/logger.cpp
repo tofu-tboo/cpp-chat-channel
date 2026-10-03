@@ -60,7 +60,7 @@ Logger::~Logger() {
 }
 
 
-void Logger::enqueue(std::uint64_t timestamp, std::string message, bool is_err) {
+void Logger::enqueue(TimePoint timestamp, std::string message, bool is_err) {
     LogNode* node = new LogNode{ {std::move(message), is_err}, timestamp, nullptr };
     
     // Lock-free push to head
@@ -94,7 +94,7 @@ void Logger::consume_logs() {
         local_head = prev;
 
         // Sort by timestamp
-        std::multimap<std::uint64_t, LogEntry> sorted_logs;
+        std::multimap<TimePoint, LogEntry> sorted_logs;
         while (local_head) {
             LogNode* next = local_head->next;
             sorted_logs.emplace(local_head->timestamp, std::move(local_head->entry));
@@ -114,7 +114,8 @@ void Logger::vlog(const LoggerContext* ctx, const char* format, va_list args, bo
     char msg_buffer[LOG_BUF_SIZE];
     vsnprintf(msg_buffer, sizeof(msg_buffer), format, args);
 
-    std::string full_log = datetime_str();
+    const auto timestamp = now();
+    std::string full_log = datetime_str(timestamp);
     full_log += " ";
     full_log += ctx->indicator();
     full_log += " ";
@@ -126,7 +127,6 @@ void Logger::vlog(const LoggerContext* ctx, const char* format, va_list args, bo
         full_log += apply_default_color(msg_buffer, _WHITE_);
     }
 
-    std::uint64_t timestamp = now();
     enqueue(timestamp, std::move(full_log), is_err);
 }
 		
@@ -134,7 +134,8 @@ void Logger::vlog(const char* format, va_list args, bool is_err) const {
     char msg_buffer[LOG_BUF_SIZE];
     vsnprintf(msg_buffer, sizeof(msg_buffer), format, args);
 
-    std::string full_log = datetime_str();
+    const auto timestamp = now();
+    std::string full_log = datetime_str(timestamp);
     full_log += " ";
     
     if (is_err) {
@@ -144,7 +145,6 @@ void Logger::vlog(const char* format, va_list args, bool is_err) const {
         full_log += apply_default_color(msg_buffer, _WHITE_);
     }
 
-    std::uint64_t timestamp = now();
     enqueue(timestamp, std::move(full_log), is_err);
 }
 
@@ -165,10 +165,9 @@ void Logger::elog(const char* format, ...) const {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-truncation"
 
-std::string Logger::datetime_str() const {
-    auto now = std::chrono::system_clock::now();
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
-    std::time_t timer = std::chrono::system_clock::to_time_t(now);
+std::string Logger::datetime_str(TimePoint time) const {
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(time.time_since_epoch()) % 1000;
+    std::time_t timer = std::chrono::system_clock::to_time_t(time);
     
     std::tm bt_buf;
 #ifdef _WIN32

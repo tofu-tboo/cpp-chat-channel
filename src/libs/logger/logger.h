@@ -61,6 +61,7 @@ class LoggerContext {
 
 
 class Logger { // Logger::Instance()
+		using TimePoint = std::chrono::system_clock::time_point;
 	protected:
 		struct LogEntry {
   		  	std::string message;
@@ -68,7 +69,7 @@ class Logger { // Logger::Instance()
 		};
 		struct LogNode {
 			LogEntry entry;
-			std::uint64_t timestamp;
+			TimePoint timestamp;
 			LogNode* next;
 		};
 		std::atomic<LogNode*> head{nullptr};
@@ -97,10 +98,10 @@ class Logger { // Logger::Instance()
 		// log() & elog() just delivery the arguments to vlog() right away, indicating the error flag as true or false.
 		void log(const char* format, ...) const;
 		void elog(const char* format, ...) const;
-		std::string datetime_str() const;
+			std::string datetime_str(TimePoint time) const;
 
-		inline std::uint64_t now() {
-			return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+			inline TimePoint now() const {
+				return std::chrono::system_clock::now();
 		}
 
 	private:
@@ -108,7 +109,7 @@ class Logger { // Logger::Instance()
 		void vlog(const char* format, va_list args, bool is_err) const;
 		void vlog(const LoggerContext* ctx, const char* format, va_list args, bool is_err) const;
 		std::string apply_default_color(std::string& str, const std::string& sub) const;
-   		void enqueue(std::uint64_t timestamp, std::string message, bool is_err);
+			void enqueue(TimePoint timestamp, std::string message, bool is_err);
 		void consume_logs();
 };
 
