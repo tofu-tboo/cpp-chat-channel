@@ -43,6 +43,9 @@
 #include <atomic>
 #include <semaphore>
 #include <chrono>
+#include <array>
+#include <cstddef>
+#include <utility>
 
 /*ASSUMPTION
 - A logger is always destructed after other log producers dead. (*For other global instances, no-joined thread, and etc, BE CAREFUL to use logger in them.*)
@@ -58,36 +61,51 @@
 	in non-class,
 	LOG("...");
 */
+using LoggerTimePoint = std::chrono::system_clock::time_point;
+
+struct LogEntry {
+	std::string message;
+	LoggerTimePoint timestamp;
+	bool is_err;
+};
+
+class LogRingBuffer {
+	static constexpr std::size_t Capacity = 1024;
+	std::array<LogEntry, Capacity> entries;
+	std::atomic<std::size_t> head{0};
+	std::atomic<std::size_t> tail{0};
+
+public:
+	bool try_push(LogEntry entry);
+	bool try_pop(LogEntry& entry);
+};
+
 class LoggerContext {
 	private:
 		// It makes sense to each instances have their info of indicators.
 		std::string indi;
 		const char* name; // for a static string
 		const void* src; // addr of class inst
+		mutable LogRingBuffer log_queue;
+		void vlog(const char* format, va_list args, bool is_err) const;
 	public:
 		LoggerContext(const void* const s, const char* n);
 		void log(const char* format, ...) const;
 		void elog(const char* format, ...) const;
-		const std::string& indicator() const;
-}
+};
 
 
 class Logger { // Logger::Instance()
-		using TimePoint = std::chrono::system_clock::time_point;
 	protected:
-		struct LogEntry {
-  		  	std::string message;
-			TimePoint timestamp;
-    		bool is_err;
-		};
-		struct Node {
-			LogEntry entry;
-			Node* next;
-		};
-		std::atomic<Node*> head{nullptr};
+		// struct Node {
+		// 	LogEntry entry;
+		// 	Node* next;
+		// };
+		// std::atomic<Node*> head{nullptr};
 		std::atomic<bool>       running;
 		std::thread             worker;
 		std::counting_semaphore<INT_MAX> sem{0};
+		mutable LogRingBuffer log_queue; // for non-class logging
 
 	public: // singleton
 		static Logger& Instance() { // user can control initialization time by calling
@@ -101,18 +119,17 @@ class Logger { // Logger::Instance()
 		// log() & elog() just delivery the arguments to vlog() right away, indicating the error flag as true or false.
 		void log(const char* format, ...) const;
 		void elog(const char* format, ...) const;
-		std::string datetime_str(TimePoint time) const;
+		std::string datetime_str(LoggerTimePoint time) const;
 
-		inline TimePoint now() const {
+		inline LoggerTimePoint now() const {
 			return std::chrono::system_clock::now();
 		}
 
 	private:
 		friend class LoggerContext;
 		void vlog(const char* format, va_list args, bool is_err) const;
-		void vlog(const LoggerContext* ctx, const char* format, va_list args, bool is_err) const;
 		std::string apply_default_color(const char* str, const char* color) const;
-		void enqueue(TimePoint timestamp, std::string message, bool is_err);
+		// void enqueue(LoggerTimePoint timestamp, std::string message, bool is_err);
 		void consume_logs();
 };
 

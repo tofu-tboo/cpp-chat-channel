@@ -4,26 +4,67 @@
 #include <chrono>
 #include <ctime>
 
+bool LogRingBuffer::try_push(LogEntry entry) {
+    const auto write = head.load(std::memory_order_relaxed);
+    const auto read = tail.load(std::memory_order_acquire);
+    if (write - read == Capacity)
+        return false;
+
+    entries[write % Capacity] = std::move(entry);
+    head.store(write + 1, std::memory_order_release);
+    return true;
+}
+
+bool LogRingBuffer::try_pop(LogEntry& entry) {
+    const auto read = tail.load(std::memory_order_relaxed);
+    const auto write = head.load(std::memory_order_acquire);
+    if (read == write)
+        return false;
+
+    entry = std::move(entries[read % Capacity]);
+    tail.store(read + 1, std::memory_order_release);
+    return true;
+}
+
 LoggerContext::LoggerContext(const void* const s, const char* n): name(n), src(s) {
     assert(strlen(n) <= 32);
     char buf[2 + 32 + 2 + 14];
     snprintf(buf, sizeof(buf), "[%s: %014p]", name, src);
     indi = buf;
+
+    //TODO: register queue to logger
 }
 void LoggerContext::log(const char* format, ...) const {
     va_list args;
     va_start(args, format);
-    LoggerI.vlog(this, format, args, false);
+    vlog(format, args, false);
     va_end(args);
 }
 void LoggerContext::elog(const char* format, ...) const {
     va_list args;
     va_start(args, format);
-    LoggerI.vlog(this, format, args, true);
+    vlog(format, args, true);
     va_end(args);
 }
-const std::string& LoggerContext::indicator() const {
-    return indi;
+
+void LoggerContext::vlog(const char* format, va_list args, bool is_err) const {
+    char msg_buffer[LOG_BUF_SIZE];
+    vsnprintf(msg_buffer, sizeof(msg_buffer), format, args);
+
+    const auto timestamp = LoggerI.now();
+    std::string full_log = LoggerI.datetime_str(timestamp);
+    full_log += " ";
+    full_log += indi;
+    full_log += " ";
+
+    if (is_err) {
+        full_log += _RED_;
+        full_log += LoggerI.apply_default_color(msg_buffer, _RED_);
+    } else {
+        full_log += LoggerI.apply_default_color(msg_buffer, _WHITE_);
+    }
+
+    log_queue.try_push({std::move(full_log), timestamp, is_err});
 }
 
 Logger::Logger(): running(true) {
@@ -50,18 +91,18 @@ Logger::~Logger() {
 }
 
 
-void Logger::enqueue(TimePoint timestamp, std::string message, bool is_err) {
-    Node* node = new Node{ {std::move(message), timestamp, is_err}, nullptr };
+// void Logger::enqueue(LoggerTimePoint timestamp, std::string message, bool is_err) {
+//     Node* node = new Node{ {std::move(message), timestamp, is_err}, nullptr };
     
-    // Lock-free push to head
-    node->next = head.load(std::memory_order_relaxed); //relaxed: ensure atomical read
-    while (!head.compare_exchange_weak(node->next, node, std::memory_order_release, std::memory_order_relaxed));
+//     // Lock-free push to head
+//     node->next = head.load(std::memory_order_relaxed); //relaxed: ensure atomical read
+//     while (!head.compare_exchange_weak(node->next, node, std::memory_order_release, std::memory_order_relaxed));
     
-    sem.release();
-}
+//     sem.release();
+// }
 
 void Logger::consume_logs() {
-    std::multimap<TimePoint, LogEntry> sorted_logs;
+    std::multimap<LoggerTimePoint, LogEntry> sorted_logs;
     while (true) {
         sem.acquire();
 
@@ -101,26 +142,6 @@ void Logger::consume_logs() {
 
 // TODO: to resolve string construction cost of func returns & vlog's declaration /   
 
-void Logger::vlog(const LoggerContext* ctx, const char* format, va_list args, bool is_err) const {
-    char msg_buffer[LOG_BUF_SIZE];
-    vsnprintf(msg_buffer, sizeof(msg_buffer), format, args);
-
-    const auto timestamp = now();
-    std::string full_log = datetime_str(timestamp); //rvo
-    full_log += " ";
-    full_log += ctx->indicator();
-    full_log += " ";
-    
-    if (is_err) {
-        full_log += _RED_;
-        full_log += apply_default_color(msg_buffer, _RED_);
-    } else {
-        full_log += apply_default_color(msg_buffer, _WHITE_);
-    }
-
-    enqueue(timestamp, std::move(full_log), is_err);
-}
-		
 void Logger::vlog(const char* format, va_list args, bool is_err) const {
     char msg_buffer[LOG_BUF_SIZE];
     vsnprintf(msg_buffer, sizeof(msg_buffer), format, args);
@@ -136,6 +157,7 @@ void Logger::vlog(const char* format, va_list args, bool is_err) const {
         full_log += apply_default_color(msg_buffer, _WHITE_);
     }
 
+    log_queue.try_push({std::move(full_log), timestamp, is_err});
     enqueue(timestamp, std::move(full_log), is_err);
 }
 
@@ -156,7 +178,7 @@ void Logger::elog(const char* format, ...) const {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-truncation"
 
-std::string Logger::datetime_str(TimePoint time) const {
+std::string Logger::datetime_str(LoggerTimePoint time) const {
     // std::format의 chrono 포맷팅은 내부 저장공간을 더 소모할 가능성이 있음. 
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(time.time_since_epoch()) % 1000;
     std::time_t timer = std::chrono::system_clock::to_time_t(time);
