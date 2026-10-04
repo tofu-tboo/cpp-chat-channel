@@ -54,7 +54,7 @@ void Logger::enqueue(TimePoint timestamp, std::string message, bool is_err) {
     Node* node = new Node{ {std::move(message), timestamp, is_err}, nullptr };
     
     // Lock-free push to head
-    node->next = head.load(std::memory_order_relaxed);
+    node->next = head.load(std::memory_order_relaxed); //relaxed: ensure atomical read
     while (!head.compare_exchange_weak(node->next, node, std::memory_order_release, std::memory_order_relaxed));
     
     sem.release();
@@ -185,7 +185,6 @@ std::string Logger::apply_default_color(
     const char* str,
     const char* color
 ) const {
-    assert(strlen(color) == 1); // guarantee color tag
     std::string result(str);
 
     std::size_t pos = result.find(_END_);

@@ -14,7 +14,7 @@
 #define _BLUE_        							"\033[0;34m"
 #define _MAGENTA_     							"\033[0;35m"
 #define _CYAN_        							"\033[0;36m"
-#define _END_									"\0x1F" // placeholder
+#define _END_									"\x1F" // placeholder
 #define LoggerI Logger::Instance()
 
 #ifdef DEBUG
@@ -27,12 +27,11 @@
 
 #define EVLOG(color, format, ...)				LoggerI.log(color "" format _WHITE_ "\n", ##__VA_ARGS__)
 #define LOG(format, ...)                        LoggerI.log(format _WHITE_ "\n", ##__VA_ARGS__)
-#ifndef ELOG
-#define ELOG(format, ...)                      LoggerI.elog(format _WHITE_ "\n", ##__VA_ARGS__)
-
 #define EVLOG(ctx, color, format, ...)			ctx.log(color "" format _END_ "\n", ##__VA_ARGS__)
 #define LOG(ctx, format, ...)                   ctx.log(format _END_ "\n", ##__VA_ARGS__)
+
 #ifndef ELOG
+#define ELOG(format, ...)                      LoggerI.elog(format _WHITE_ "\n", ##__VA_ARGS__)
 #define ELOG(ctx, format, ...)                 ctx.elog(format _END_ "\n", ##__VA_ARGS__)
 #endif
 
@@ -88,7 +87,7 @@ class Logger { // Logger::Instance()
 		std::atomic<Node*> head{nullptr};
 		std::atomic<bool>       running;
 		std::thread             worker;
-
+		std::counting_semaphore<INT_MAX> sem{0};
 
 	public: // singleton
 		static Logger& Instance() { // user can control initialization time by calling
