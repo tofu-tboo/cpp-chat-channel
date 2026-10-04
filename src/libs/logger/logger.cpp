@@ -26,20 +26,10 @@ const std::string& LoggerContext::indicator() const {
     return indi;
 }
 
-Logger* Logger::inst = nullptr; 
-
 Logger::Logger(): running(true) {
     // Setup a worker
     running = true;
-    worker = std::thread(&LoggerI::consume_logs, this);
-	
-	// if (ptr == nullptr)
-	// 	_log_header = color + "[" + className + "] ";
-	// else {
-	// 	char buffer[15];
-	// 	snprintf(buffer, sizeof(buffer), "%14p", ptr);
-	// 	_log_header = color + "[" + className + ":" + std::string(buffer) + "] ";
-	// }
+    worker = std::thread(&Logger::consume_logs, this);
 }
 
 Logger::~Logger() {
@@ -51,9 +41,9 @@ Logger::~Logger() {
     }
     
     // Cleanup remaining nodes
-    LogNode* current = head.load();
+    Node* current = head.load();
     while (current) {
-        LogNode* next = current->next;
+        Node* next = current->next;
         delete current;
         current = next;
     }
@@ -61,7 +51,7 @@ Logger::~Logger() {
 
 
 void Logger::enqueue(TimePoint timestamp, std::string message, bool is_err) {
-    LogNode* node = new LogNode{ {std::move(message), is_err}, timestamp, nullptr };
+    Node* node = new Node{ {std::move(message), timestamp, is_err}, nullptr };
     
     // Lock-free push to head
     node->next = head.load(std::memory_order_relaxed);
@@ -71,11 +61,12 @@ void Logger::enqueue(TimePoint timestamp, std::string message, bool is_err) {
 }
 
 void Logger::consume_logs() {
+    std::multimap<TimePoint, LogEntry> sorted_logs;
     while (true) {
         sem.acquire();
 
         // Atomic pop all (take ownership of the whole list)
-        LogNode* local_head = head.exchange(nullptr, std::memory_order_acquire);
+        Node* local_head = head.exchange(nullptr, std::memory_order_acquire);
         
         if (!local_head) {
             if (!running) break; // clear 판별
@@ -83,10 +74,10 @@ void Logger::consume_logs() {
         }
 		
         // Reverse the list to restore FIFO order (Oldest -> Newest)
-        LogNode* prev = nullptr;
-        LogNode* current = local_head;
+        Node* prev = nullptr;
+        Node* current = local_head;
         while (current) {
-            LogNode* next = current->next;
+            Node* next = current->next;
             current->next = prev;
             prev = current;
             current = next;
@@ -94,10 +85,10 @@ void Logger::consume_logs() {
         local_head = prev;
 
         // Sort by timestamp
-        std::multimap<TimePoint, LogEntry> sorted_logs;
+        sorted_logs.clear();
         while (local_head) {
-            LogNode* next = local_head->next;
-            sorted_logs.emplace(local_head->timestamp, std::move(local_head->entry));
+            Node* next = local_head->next;
+            sorted_logs.emplace(local_head->entry.timestamp, std::move(local_head->entry));
             delete local_head;
             local_head = next;
         }
@@ -115,7 +106,7 @@ void Logger::vlog(const LoggerContext* ctx, const char* format, va_list args, bo
     vsnprintf(msg_buffer, sizeof(msg_buffer), format, args);
 
     const auto timestamp = now();
-    std::string full_log = datetime_str(timestamp);
+    std::string full_log = datetime_str(timestamp); //rvo
     full_log += " ";
     full_log += ctx->indicator();
     full_log += " ";
@@ -135,7 +126,7 @@ void Logger::vlog(const char* format, va_list args, bool is_err) const {
     vsnprintf(msg_buffer, sizeof(msg_buffer), format, args);
 
     const auto timestamp = now();
-    std::string full_log = datetime_str(timestamp);
+    std::string full_log = datetime_str(timestamp); //rvo
     full_log += " ";
     
     if (is_err) {
@@ -166,25 +157,27 @@ void Logger::elog(const char* format, ...) const {
 #pragma GCC diagnostic ignored "-Wformat-truncation"
 
 std::string Logger::datetime_str(TimePoint time) const {
+    // std::format의 chrono 포맷팅은 내부 저장공간을 더 소모할 가능성이 있음. 
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(time.time_since_epoch()) % 1000;
     std::time_t timer = std::chrono::system_clock::to_time_t(time);
     
     std::tm bt_buf;
 #ifdef _WIN32
-    localtime_s(&bt_buf, &timer);
+    if (gmtime_s(&bt_buf, &timer))
+        return "UTC-ERROR";
     std::tm* bt = &bt_buf;
 #else
-    std::tm* bt = localtime_r(&timer, &bt_buf);
+    std::tm* bt = gmtime_r(&timer, &bt_buf);
 #endif
 
-    char time_buf[64];
-    if (!bt) return "invalid_time";
+    char buf[24];
+    if (!bt) return "UTC-ERROR";
 
-    snprintf(time_buf, sizeof(time_buf), "%04d-%02d-%02d %02d:%02d:%02d.%03ld",
+    snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d:%02d.%03ld",
         bt->tm_year + 1900, bt->tm_mon + 1, bt->tm_mday,
         bt->tm_hour, bt->tm_min, bt->tm_sec, ms.count());
 
-    return _color + time_buf;
+    return std::string(buf);
 }
 #pragma GCC diagnostic pop
 

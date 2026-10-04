@@ -15,18 +15,25 @@
 #define _MAGENTA_     							"\033[0;35m"
 #define _CYAN_        							"\033[0;36m"
 #define _END_									"\0x1F" // placeholder
+#define LoggerI Logger::Instance()
 
 #ifdef DEBUG
 #define DLOG(format, ...)                       LoggerI.log(format _WHITE_ "\n", ##__VA_ARGS__)
+#define DLOG(ctx, format, ...)                       ctx.log(format _END_ "\n", ##__VA_ARGS__)
 #else
 #define DLOG(format, ...) // log for debug mode
+#define DLOG(ctx, format, ...) // log for debug mode
 #endif
 
-#define EVENT(color, format, ...)				LoggerI.log(color "" format _WHITE_ "\n", ##__VA_ARGS__)
-#define LOGS(format, ...)						LoggerI.log(format, ##__VA_ARGS__)
+#define EVLOG(color, format, ...)				LoggerI.log(color "" format _WHITE_ "\n", ##__VA_ARGS__)
 #define LOG(format, ...)                        LoggerI.log(format _WHITE_ "\n", ##__VA_ARGS__)
-#ifndef ERROR
-#define ERROR(format, ...)                      LoggerI.elog(format "\n", ##__VA_ARGS__)
+#ifndef ELOG
+#define ELOG(format, ...)                      LoggerI.elog(format _WHITE_ "\n", ##__VA_ARGS__)
+
+#define EVLOG(ctx, color, format, ...)			ctx.log(color "" format _END_ "\n", ##__VA_ARGS__)
+#define LOG(ctx, format, ...)                   ctx.log(format _END_ "\n", ##__VA_ARGS__)
+#ifndef ELOG
+#define ELOG(ctx, format, ...)                 ctx.elog(format _END_ "\n", ##__VA_ARGS__)
 #endif
 
 #include <string>
@@ -38,13 +45,19 @@
 #include <semaphore>
 #include <chrono>
 
+/*ASSUMPTION
+- A logger is always destructed after other log producers dead. (*For other global instances, no-joined thread, and etc, BE CAREFUL to use logger in them.*)
+*/
 
 /* USAGE
 	class { LoggerContext ctx; constructor(): ctx(_RED_ "my class") {} }
 	...
-	ctx.log("");
+	ctx.log("...");
 	OR
-	LOG(ctx, "");
+	LOG(ctx, "...");
+
+	in non-class,
+	LOG("...");
 */
 class LoggerContext {
 	private:
@@ -65,31 +78,22 @@ class Logger { // Logger::Instance()
 	protected:
 		struct LogEntry {
   		  	std::string message;
+			TimePoint timestamp;
     		bool is_err;
 		};
-		struct LogNode {
+		struct Node {
 			LogEntry entry;
-			TimePoint timestamp;
-			LogNode* next;
+			Node* next;
 		};
-		std::atomic<LogNode*> head{nullptr};
+		std::atomic<Node*> head{nullptr};
 		std::atomic<bool>       running;
 		std::thread             worker;
 
-		static Logger* inst;
+
 	public: // singleton
-		static Logger* Instance() {
-			if (!inst) {
-				inst = new Logger();
-				atexit(Destroy);
-			}
-			return inst;
-		}
-		static void Destroy() {
-			if (inst) {
-				delete inst;
-				inst = nullptr;
-			}
+		static Logger& Instance() { // user can control initialization time by calling
+			static Logger instance;
+			return instance;
 		}
 	protected:
 		Logger();
@@ -98,21 +102,20 @@ class Logger { // Logger::Instance()
 		// log() & elog() just delivery the arguments to vlog() right away, indicating the error flag as true or false.
 		void log(const char* format, ...) const;
 		void elog(const char* format, ...) const;
-			std::string datetime_str(TimePoint time) const;
+		std::string datetime_str(TimePoint time) const;
 
-			inline TimePoint now() const {
-				return std::chrono::system_clock::now();
+		inline TimePoint now() const {
+			return std::chrono::system_clock::now();
 		}
 
 	private:
 		friend class LoggerContext;
 		void vlog(const char* format, va_list args, bool is_err) const;
 		void vlog(const LoggerContext* ctx, const char* format, va_list args, bool is_err) const;
-		std::string apply_default_color(std::string& str, const std::string& sub) const;
-			void enqueue(TimePoint timestamp, std::string message, bool is_err);
+		std::string apply_default_color(const char* str, const char* color) const;
+		void enqueue(TimePoint timestamp, std::string message, bool is_err);
 		void consume_logs();
 };
 
-using LoggerI = Logger::Instance();
 
 #endif
